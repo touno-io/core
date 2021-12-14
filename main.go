@@ -93,6 +93,7 @@ func main() {
 	// }))
 
 	api.Get("/url", handlerGetURL)
+	api.Post("/url", handlerAddURL)
 
 	app.Use(func(c *fiber.Ctx) error {
 		return fiber.ErrNotFound

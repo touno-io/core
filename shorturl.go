@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -43,9 +44,9 @@ type ShortURL struct {
 	Created time.Time `json:"created"`
 }
 
-func generateSlug() string {
+func hashRandomSlug() string {
 	var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyz")
-	s := make([]rune, 6)
+	s := make([]rune, 4)
 
 	for i := range s {
 		s[i] = chars[rand.Intn(len(chars))]
@@ -57,7 +58,7 @@ func generateSlug() string {
 func handlerGetURL(c *fiber.Ctx) error {
 	stx, err := pgx.Begin()
 	if err != nil {
-		return err
+		return c.SendString(err.Error())
 	}
 	rows, err := stx.Query("SELECT url, hash, hit, created FROM shorturl")
 	if stx.IsError(err) != nil {
@@ -72,7 +73,7 @@ func handlerGetURL(c *fiber.Ctx) error {
 
 		url = append(url, &ShortURL{
 			URL:     row["url"],
-			Hash:    fmt.Sprintf("https://touno.io/s/%s", row["hash"]),
+			Hash:    fmt.Sprintf("/s/%s", row["hash"]),
 			Hit:     row.ToInt64("hit"),
 			Created: row.ToTime("created"),
 		})
@@ -85,6 +86,56 @@ func handlerGetURL(c *fiber.Ctx) error {
 	return c.JSON(url)
 }
 
+type NewURL struct {
+	URL     string    `json:"url"`
+	Hash    string    `json:"hash"`
+	Created time.Time `json:"created"`
+}
+
+func handlerAddURL(c *fiber.Ctx) error {
+	body := NewURL{}
+	err := c.BodyParser(&body)
+	if err != nil {
+		return c.SendString(err.Error())
+	}
+
+	if body.URL == "" {
+		return c.SendString("URL empty.")
+	}
+
+	_, err = url.Parse(body.URL)
+	if err != nil {
+		return c.SendString(err.Error())
+	}
+
+	stx, err := pgx.Begin()
+	if err != nil {
+		return c.SendString(err.Error())
+	}
+
+	short, err := stx.QueryOne("SELECT COUNT(*) item FROM shorturl WHERE url = $1", body.URL)
+	if stx.IsError(err) != nil {
+		return c.SendString(err.Error())
+	}
+
+	if short.ToInt64("item") > 0 {
+		return c.SendString("URL exists.")
+	}
+	hashKey := hashRandomSlug()
+
+	err = stx.Execute("INSERT INTO shorturl (hash,url) VALUES ($1,$2)", hashKey, body.URL)
+	if stx.IsError(err) != nil {
+		return c.SendString(err.Error())
+	}
+
+	if err := stx.Commit(); err != nil {
+		return c.SendString(err.Error())
+	}
+	body.Hash = fmt.Sprintf("/s/%s", hashKey)
+	body.Created = time.Now()
+	return c.JSON(body)
+}
+
 func handlerRedirectURL(c *fiber.Ctx) error {
 	ipAddr := c.IP()
 	IsLocalhost := ipAddr == "127.0.0.1" || ipAddr == "::1"
@@ -93,13 +144,13 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	}
 
 	regHash, _ := regexp.Compile("^[a-z0-9]+")
-	hashData := regHash.FindStringSubmatch(c.Params("hash"))
+	hashKey := regHash.FindStringSubmatch(c.Params("hash"))[0]
 	stx, err := pgx.Begin()
 	if err != nil {
-		return err
+		return c.SendString(err.Error())
 	}
-	short, err := stx.QueryOne("SELECT id,url FROM shorturl WHERE hash = $1", hashData[0])
 
+	short, err := stx.QueryOne("SELECT url FROM shorturl WHERE hash = $1", hashKey)
 	if stx.IsError(err) != nil {
 		return c.SendString(err.Error())
 	}
@@ -160,13 +211,13 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 
 		timeNow := time.Now()
 		track, err := stx.QueryOne(`
-			INSERT INTO shorturl_tracking (ip_addr,isp,country,proxy,hosting,visited)
-			VALUES ($1,$2,$3,$4,$5,$6)
+			INSERT INTO shorturl_tracking (ip_addr,hash,isp,country,proxy,hosting,visited)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
 			ON CONFLICT ON CONSTRAINT uq_shorturl_tracking
 			DO UPDATE SET
 				isp = excluded.isp, country = excluded.country, proxy = excluded.proxy, hosting = excluded.hosting
 			RETURNING visited
-		;`, c.IP(), res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
+		;`, c.IP(), hashKey, res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
 		if stx.IsError(err) != nil {
 			return c.SendString(err.Error())
 		}
@@ -174,11 +225,11 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		visited := track.ToTime("visited")
 
 		if time.Since(visited).Minutes() > 30 || int16(timeNow.Sub(visited).Seconds()) < 1 {
-			err = stx.Execute("UPDATE shorturl SET hit = hit + 1 WHERE hash = $1", hashData[0])
+			err = stx.Execute("UPDATE shorturl SET hit = hit + 1 WHERE hash = $1", hashKey)
 			if stx.IsError(err) != nil {
 				return c.SendString(err.Error())
 			}
-			err := stx.Execute(`INSERT INTO shorturl_history (id, agent, device) VALUES ($1,$2,$3);`, short["id"], string(sAgent), string(sDevice))
+			err := stx.Execute(`INSERT INTO shorturl_history (hash, agent, device) VALUES ($1,$2,$3);`, hashKey, string(sAgent), string(sDevice))
 			if stx.IsError(err) != nil {
 				return c.SendString(err.Error())
 			}
