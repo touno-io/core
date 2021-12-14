@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func createClientHTTP(method string, url string) ([]byte, error) {
+func createClientHTTP(method string, url string) (*http.Response, error) {
 	var payload *strings.Reader = strings.NewReader("{}")
 
 	client := &http.Client{}
@@ -19,8 +19,11 @@ func createClientHTTP(method string, url string) ([]byte, error) {
 
 	// req.Header.Add("Accept", "application/json")
 	// req.Header.Add("Content-Type", "application/json")
+	return client.Do(req)
+}
 
-	res, err := client.Do(req)
+func fetch(method string, url string) ([]byte, error) {
+	res, err := createClientHTTP(method, url)
 	if err != nil {
 		return nil, err
 	}

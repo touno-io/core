@@ -14,7 +14,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/basicauth"
+	"github.com/gofiber/template/html"
 	"github.com/tmilewski/goenv"
 )
 
@@ -28,6 +28,7 @@ var (
 	appVersion      string = ""
 	appTitle        string = ""
 	appIsProduction bool
+	pgx             *PGClient = &PGClient{}
 )
 
 func init() {
@@ -48,27 +49,14 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.Ltime)
 }
 
-func generateSlug() string {
-	var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	s := make([]rune, 6)
-
-	for i := range s {
-		s[i] = chars[rand.Intn(len(chars))]
-	}
-
-	return string(s)
-}
-
-var (
-	pgx *PGClient = &PGClient{}
-)
-
 func main() {
 	gracefulStop := make(chan os.Signal, 1)
 	ctx := context.Background()
 	pgx.Connect(&ctx, appTitle)
 
+	engine := html.New("./views", ".html")
 	app := fiber.New(fiber.Config{
+		Views:                 engine,
 		DisableStartupMessage: true,
 		CaseSensitive:         true,
 		ErrorHandler: func(c *fiber.Ctx, e error) error {
@@ -80,49 +68,51 @@ func main() {
 	app.Use(handerMiddlewareSecurity)
 
 	app.Get("/health", handlerHealth)
-	app.Get("/s/:hash", handlerShortURL)
+	app.Get("/s/:hash", handlerRedirectURL)
 
-	api := app.Group("/api", basicauth.New(basicauth.Config{
-		Users: map[string]string{},
-		Realm: "Forbidden",
-		Authorizer: func(user string, pass string) bool {
-			log.Println(user, ":", pass)
-			return true
-		},
-		Unauthorized: func(c *fiber.Ctx) error {
-			return fiber.ErrUnauthorized
-		},
-		ContextUsername: "username",
-		ContextPassword: "password",
-	}))
-
-	api.Get("/", func(c *fiber.Ctx) error {
-		c.SendString("{ OK: true }")
-		return nil
+	api := app.Group("/api", func(c *fiber.Ctx) error {
+		return c.Next()
 	})
+
+	// api.Use("/", basicauth.New(basicauth.Config{
+	// 	Users: map[string]string{},
+	// 	Realm: "Forbidden",
+	// 	Authorizer: func(user string, pass string) bool {
+	// 		if !appIsProduction {
+	// 			log.Println(user, ":", pass)
+	// 			return true
+	// 		} else {
+	// 			return false
+	// 		}
+	// 	},
+	// 	Unauthorized: func(c *fiber.Ctx) error {
+	// 		return fiber.ErrUnauthorized
+	// 	},
+	// 	ContextUsername: "username",
+	// 	ContextPassword: "password",
+	// }))
+
+	api.Get("/url", handlerGetURL)
 
 	app.Use(func(c *fiber.Ctx) error {
 		return fiber.ErrNotFound
 	})
 
 	go appFiberListen(app, ":3000")
-	log.Println(generateSlug())
 
 	signal.Notify(gracefulStop, os.Interrupt, syscall.SIGTERM)
 	<-gracefulStop
 	log.Println("Graceful Exiting...")
 
-	// if appIsProduction {
-	// 	err = app.Shutdown()
-	// 	if err != nil {
-	// 		log.Warnf("Fiber: %s", err)
-	// 	}
-	// }
+	if appIsProduction {
+		if err := app.Shutdown(); err != nil {
+			log.Fatalf("Fiber: %s", err)
+		}
+	}
 
-	// err = pgx.Close()
-	// if err != nil {
-	// 	log.Warnf("DB: %s", err)
-	// }
+	if err := pgx.Close(); err != nil {
+		log.Fatalf("DB: %s", err)
+	}
 }
 
 func appFiberListen(app *fiber.App, port string) {

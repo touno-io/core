@@ -277,6 +277,7 @@ func (stx *PGTx) IsError(err error) error {
 		if ex := stx.Rollback(); ex != nil {
 			return err
 		}
+		return err
 	}
 
 	return nil

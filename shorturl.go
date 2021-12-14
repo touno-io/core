@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
 	"time"
@@ -29,23 +30,86 @@ type Device struct {
 	Bot       bool   `json:"bot"`
 }
 
-func handlerShortURL(c *fiber.Ctx) error {
+type Meta struct {
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+type ShortURL struct {
+	URL     string    `json:"url"`
+	Hash    string    `json:"hash"`
+	Hit     int64     `json:"hit"`
+	Created time.Time `json:"created"`
+}
+
+func generateSlug() string {
+	var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyz")
+	s := make([]rune, 6)
+
+	for i := range s {
+		s[i] = chars[rand.Intn(len(chars))]
+	}
+
+	return string(s)
+}
+
+func handlerGetURL(c *fiber.Ctx) error {
+	stx, err := pgx.Begin()
+	if err != nil {
+		return err
+	}
+	rows, err := stx.Query("SELECT url, hash, hit, created FROM shorturl")
+	if stx.IsError(err) != nil {
+		return c.SendString(err.Error())
+	}
+	url := []*ShortURL{}
+	for rows.Next() {
+		row, err := stx.FetchRow(rows)
+		if stx.IsError(err) != nil {
+			return c.SendString(err.Error())
+		}
+
+		url = append(url, &ShortURL{
+			URL:     row["url"],
+			Hash:    fmt.Sprintf("https://touno.io/s/%s", row["hash"]),
+			Hit:     row.ToInt64("hit"),
+			Created: row.ToTime("created"),
+		})
+	}
+
+	if err := stx.Commit(); err != nil {
+		return c.SendString(err.Error())
+	}
+
+	return c.JSON(url)
+}
+
+func handlerRedirectURL(c *fiber.Ctx) error {
 	ipAddr := c.IP()
 	IsLocalhost := ipAddr == "127.0.0.1" || ipAddr == "::1"
 	if len(c.Params("hash")) != 4 || (IsLocalhost && appIsProduction) {
 		return c.Status(fiber.StatusInternalServerError).SendString("Invalid URL redirect")
 	}
 
-	regHash, _ := regexp.Compile("^[a-zA-Z0-9]+")
+	regHash, _ := regexp.Compile("^[a-z0-9]+")
 	hashData := regHash.FindStringSubmatch(c.Params("hash"))
 	stx, err := pgx.Begin()
 	if err != nil {
 		return err
 	}
 	short, err := stx.QueryOne("SELECT id,url FROM shorturl WHERE hash = $1", hashData[0])
+
 	if stx.IsError(err) != nil {
 		return c.SendString(err.Error())
 	}
+
+	// metaBody, err := fetch("GET", short["url"])
+	// if stx.IsError(err) != nil {
+	// 	return c.SendString(err.Error())
+	// }
+
+	// log.Printf("%s", string(metaBody))
 
 	raw := string(c.Request().Header.Header())
 	regUserAgent, _ := regexp.Compile("User-Agent:.*?\n")
@@ -56,7 +120,7 @@ func handlerShortURL(c *fiber.Ctx) error {
 		ipAddr = ""
 	}
 	var res map[string]interface{}
-	body, err := createClientHTTP("GET", fmt.Sprintf("http://ip-api.com/json/%s?fields=status,country,isp,proxy,hosting", ipAddr))
+	body, err := fetch("GET", fmt.Sprintf("http://ip-api.com/json/%s?fields=status,country,isp,proxy,hosting", ipAddr))
 	if stx.IsError(err) != nil {
 		return c.SendString(err.Error())
 	}
@@ -121,14 +185,17 @@ func handlerShortURL(c *fiber.Ctx) error {
 		}
 	}
 
+	nSeconds := 3
 	if err := stx.Commit(); err != nil {
 		return c.SendString(err.Error())
 	}
 	if appIsProduction {
-		return c.Redirect(short["url"])
-	} else {
-		return c.SendString(
-			fmt.Sprintf("url: %s\naddr: %s\nisp: %s\ncountry: %s\nproxy: %t\nhosting: %t\nos: %s\nbrowser: %s\nagent: %s",
-				short["url"], c.IP(), res["isp"], res["country"], res["proxy"], res["hosting"], agent.OS, agent.Name, agent.String))
+		c.Response().Header.Add("Refresh", fmt.Sprintf("%d; url=%s", nSeconds, short["url"]))
 	}
+
+	return c.Render("index", fiber.Map{
+		"Title":   "Hello, World!",
+		"URL":     short["url"],
+		"Seconds": nSeconds,
+	})
 }
