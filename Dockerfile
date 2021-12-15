@@ -16,7 +16,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=386 go build -o /go/bin/ouno .
 FROM alpine:latest
 
 WORKDIR /app
-COPY --from=builder /go/bin/ouno /go/src/VERSION ./
+COPY --from=builder /go/bin/ouno /go/src/VERSION /go/src/views ./
 EXPOSE 3000
 
 CMD [ "/app/ouno" ]
