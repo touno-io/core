@@ -250,7 +250,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		c.Response().Header.Add("Refresh", fmt.Sprintf("%d; url=%s", nSeconds, short["url"]))
 	}
 
-	return c.Render("index", fiber.Map{
+	return c.Render("short-url", fiber.Map{
 		"Title":   "Hello, World!",
 		"URL":     short["url"],
 		"Seconds": nSeconds,
