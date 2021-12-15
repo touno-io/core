@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -171,7 +172,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	connectingIp := regCfIP.FindStringSubmatch(raw)
 
 	if IsLocalhost {
-		ipAddr = ""
+		ipAddr = os.Getenv("IP_LOCALHOST")
 	} else if len(connectingIp) > 0 {
 		ipAddr = strings.TrimSpace(connectingIp[1])
 	}
@@ -193,7 +194,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		sAgent, err := json.Marshal(Agent{
 			Name:    agent.Name,
 			Version: agent.Version,
-			IP:      c.IP(),
+			IP:      ipAddr,
 			Country: res["country"].(string),
 			ISP:     res["isp"].(string),
 			Proxy:   res["proxy"].(bool),
@@ -223,7 +224,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 			DO UPDATE SET
 				isp = excluded.isp, country = excluded.country, proxy = excluded.proxy, hosting = excluded.hosting
 			RETURNING visited
-		;`, c.IP(), hashKey, res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
+		;`, ipAddr, hashKey, res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
 		if stx.IsError(err) != nil {
 			return c.SendString(err.Error())
 		}
