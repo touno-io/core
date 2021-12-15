@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -163,8 +164,8 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 
 	raw := string(c.Request().Header.Header())
 	regUserAgent, _ := regexp.Compile("(?i)user-agent:(.*?)\n")
-	header := regUserAgent.FindStringSubmatch(raw)
-	agent := ua.Parse(header[1])
+	hAgent := regUserAgent.FindStringSubmatch(raw)
+	agent := ua.Parse(strings.TrimSpace(hAgent[1]))
 
 	regCfIP, _ := regexp.Compile("(?i)cf-connecting-ip:(.*?)\n")
 	connectingIp := regCfIP.FindStringSubmatch(raw)
@@ -172,7 +173,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	if IsLocalhost {
 		ipAddr = ""
 	} else if len(connectingIp) > 0 {
-		ipAddr = connectingIp[1]
+		ipAddr = strings.TrimSpace(connectingIp[1])
 	}
 
 	var res map[string]interface{}
