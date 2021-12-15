@@ -181,7 +181,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	}
 
 	if res["status"] == "fail" {
-		return c.SendString("IP can't is " + res["message"].(string))
+		return c.SendString(fmt.Sprintf("IP can't is %+v", res))
 	}
 	if !agent.Bot {
 		sAgent, err := json.Marshal(Agent{
