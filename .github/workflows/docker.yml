@@ -14,7 +14,23 @@ jobs:
       IMAGE_NAME: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v2
-      - name: Get Version
+
+      - name: Build image $IMAGE_NAME
+        run: |
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+
+          # Strip "v" prefix from tag name
+          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+
+          # Use Docker `latest` tag convention
+          [ "$VERSION" == "main" ] && VERSION=latest
+          
+          docker build -f $IMAGE_FILE -t $IMAGE_NAME --build-arg VERSION=$VERSION .
+
+      - name: Log into docker.io
+        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u ${{ github.actor }} --password-stdin
+
+      - name: Push image to docker.io
         run: |
           IMAGE_ID=${{ github.actor }}/$IMAGE_NAME
 
@@ -33,14 +49,6 @@ jobs:
           echo IMAGE_ID=$IMAGE_ID
           echo VERSION=$VERSION
 
-      - name: Build image $IMAGE_NAME
-        run: docker build -f $IMAGE_FILE -t $IMAGE_NAME --build-arg VERSION=$VERSION .
-
-      - name: Log into docker.io
-        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u ${{ github.actor }} --password-stdin
-
-      - name: Push image to docker.io
-        run: |
           docker tag $IMAGE_NAME $IMAGE_ID:$VERSION
           docker push $IMAGE_ID:$VERSION
           
