@@ -67,6 +67,10 @@ func main() {
 
 	app.Use(handerMiddlewareSecurity)
 
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.Render("index", fiber.Map{})
+	})
+
 	app.Get("/health", handlerHealth)
 	app.Get("/s/:hash", handlerRedirectURL)
 

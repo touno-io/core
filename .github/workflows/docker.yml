@@ -7,7 +7,7 @@ on:
       - v*
 
 jobs:
-  funcless:
+  DockerBuild:
     runs-on: ubuntu-18.04
     env:
       IMAGE_FILE: Dockerfile
