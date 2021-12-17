@@ -64,6 +64,7 @@ func main() {
 			return nil
 		},
 	})
+	app.Static("/", "./assets")
 
 	app.Use(handerMiddlewareSecurity)
 
@@ -102,6 +103,22 @@ func main() {
 	app.Use(func(c *fiber.Ctx) error {
 		return fiber.ErrNotFound
 	})
+
+	// c := colly.NewCollector()
+	// // Find and visit all links
+	// c.OnHTML("html", func(e *colly.HTMLElement) {
+	// 	title := e.ChildText("title")
+	// 	fmt.Printf("title: %q\n", title)
+	// 	for _, name := range e.ChildAttrs("meta", "name") {
+	// 		value := e.ChildAttrs(fmt.Sprintf(`meta[name="%s"]`, name), "content")
+	// 		fmt.Printf("meta: %q = %q\n", name, value[0])
+	// 		if name == "twitter:title" {
+	// 			title = value[0]
+	// 		}
+	// 	}
+	// })
+
+	// c.Visit("https://discord.gg/QDccF497Mw")
 
 	go appFiberListen(app, ":3000")
 

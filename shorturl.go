@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/url"
 	"os"
@@ -46,7 +47,7 @@ type ShortURL struct {
 }
 
 func hashRandomSlug() string {
-	var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyz")
+	var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	s := make([]rune, 4)
 
 	for i := range s {
@@ -138,13 +139,15 @@ func handlerAddURL(c *fiber.Ctx) error {
 }
 
 func handlerRedirectURL(c *fiber.Ctx) error {
+	regHash, _ := regexp.Compile("^[a-zA-Z0-9]+")
+
 	ipAddr := c.IP()
-	IsLocalhost := ipAddr == "127.0.0.1" || ipAddr == "::1"
-	if len(c.Params("hash")) != 4 || (IsLocalhost && appIsProduction) {
+	if len(c.Params("hash")) != 4 {
 		return c.Status(fiber.StatusInternalServerError).SendString("Invalid URL redirect")
 	}
+	log.Println(c.Params("hash"))
+	log.Println(regHash.FindStringSubmatch(c.Params("hash")))
 
-	regHash, _ := regexp.Compile("^[a-z0-9]+")
 	hashKey := regHash.FindStringSubmatch(c.Params("hash"))[0]
 	stx, err := pgx.Begin()
 	if err != nil {
@@ -153,7 +156,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 
 	short, err := stx.QueryOne("SELECT url FROM shorturl WHERE hash = $1", hashKey)
 	if stx.IsError(err) != nil {
-		return c.SendString(err.Error())
+		return c.SendString("Invalid URL redirect")
 	}
 
 	// metaBody, err := fetch("GET", short["url"])
@@ -171,10 +174,10 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	regCfIP, _ := regexp.Compile("(?i)cf-connecting-ip:(.*?)\n")
 	connectingIp := regCfIP.FindStringSubmatch(raw)
 
-	if IsLocalhost {
-		ipAddr = os.Getenv("IP_LOCALHOST")
-	} else if len(connectingIp) > 0 {
+	if len(connectingIp) > 0 {
 		ipAddr = strings.TrimSpace(connectingIp[1])
+	} else if ipAddr == "127.0.0.1" || ipAddr == "::1" {
+		ipAddr = os.Getenv("IP_LOCALHOST")
 	}
 
 	var res map[string]interface{}
@@ -190,56 +193,60 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	if res["status"] == "fail" {
 		return c.SendString(fmt.Sprintf("%s\n\nIP: %s can't is %+v", raw, ipAddr, res))
 	}
-	if !agent.Bot {
-		sAgent, err := json.Marshal(Agent{
-			Name:    agent.Name,
-			Version: agent.Version,
-			IP:      ipAddr,
-			Country: res["country"].(string),
-			ISP:     res["isp"].(string),
-			Proxy:   res["proxy"].(bool),
-			Hosting: res["hosting"].(bool),
-		})
-		if stx.IsError(err) != nil {
-			return c.SendString(err.Error())
-		}
 
-		sDevice, err := json.Marshal(Device{
-			OS:        agent.OS,
-			OSVersion: agent.Version,
-			Mobile:    agent.Mobile,
-			Tablet:    agent.Tablet,
-			Desktop:   agent.Desktop,
-			Bot:       agent.Bot,
-		})
-		if stx.IsError(err) != nil {
-			return c.SendString(err.Error())
-		}
+	sAgent, err := json.Marshal(Agent{
+		Name:    agent.Name,
+		Version: agent.Version,
+		IP:      ipAddr,
+		Country: res["country"].(string),
+		ISP:     res["isp"].(string),
+		Proxy:   res["proxy"].(bool),
+		Hosting: res["hosting"].(bool),
+	})
+	if stx.IsError(err) != nil {
+		return c.SendString(err.Error())
+	}
 
-		timeNow := time.Now()
-		track, err := stx.QueryOne(`
-			INSERT INTO shorturl_tracking (ip_addr,hash,isp,country,proxy,hosting,visited)
+	sDevice, err := json.Marshal(Device{
+		OS:        agent.OS,
+		OSVersion: agent.Version,
+		Mobile:    agent.Mobile,
+		Tablet:    agent.Tablet,
+		Desktop:   agent.Desktop,
+		Bot:       agent.Bot,
+	})
+	if stx.IsError(err) != nil {
+		return c.SendString(err.Error())
+	}
+
+	timeNow := time.Now()
+	track, err := stx.QueryOne(`
+			INSERT INTO shorturl_tracking AS st (ip_addr,hash,isp,country,proxy,hosting,visited)
 			VALUES ($1,$2,$3,$4,$5,$6,$7)
 			ON CONFLICT ON CONSTRAINT uq_shorturl_tracking
 			DO UPDATE SET
-				isp = excluded.isp, country = excluded.country, proxy = excluded.proxy, hosting = excluded.hosting
+				isp = excluded.isp, country = excluded.country, proxy = excluded.proxy, hosting = excluded.hosting, hit = st.hit + 1
 			RETURNING visited
 		;`, ipAddr, hashKey, res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
+	if stx.IsError(err) != nil {
+		return c.SendString(err.Error())
+	}
+
+	visited := track.ToTime("visited")
+
+	if time.Since(visited).Minutes() > 30 || int16(timeNow.Sub(visited).Seconds()) < 1 {
+		err = stx.Execute("UPDATE shorturl SET hit = hit + 1 WHERE hash = $1", hashKey)
+		if stx.IsError(err) != nil {
+			return c.SendString(err.Error())
+		}
+		err = stx.Execute("UPDATE shorturl_tracking SET visited = $2 WHERE hash = $1", hashKey, timeNow.Format(time.RFC1123Z))
 		if stx.IsError(err) != nil {
 			return c.SendString(err.Error())
 		}
 
-		visited := track.ToTime("visited")
-
-		if time.Since(visited).Minutes() > 30 || int16(timeNow.Sub(visited).Seconds()) < 1 {
-			err = stx.Execute("UPDATE shorturl SET hit = hit + 1 WHERE hash = $1", hashKey)
-			if stx.IsError(err) != nil {
-				return c.SendString(err.Error())
-			}
-			err := stx.Execute(`INSERT INTO shorturl_history (hash, agent, device) VALUES ($1,$2,$3);`, hashKey, string(sAgent), string(sDevice))
-			if stx.IsError(err) != nil {
-				return c.SendString(err.Error())
-			}
+		err := stx.Execute(`INSERT INTO shorturl_history (hash, agent, device) VALUES ($1,$2,$3);`, hashKey, string(sAgent), string(sDevice))
+		if stx.IsError(err) != nil {
+			return c.SendString(err.Error())
 		}
 	}
 
