@@ -18,6 +18,7 @@ FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /go/bin/ouno /go/src/VERSION ./
 COPY --from=builder /go/src/views ./views
+COPY --from=builder /go/src/assets ./assets
 EXPOSE 3000
 
 CMD [ "/app/ouno" ]

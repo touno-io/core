@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/url"
 	"os"
@@ -34,7 +33,6 @@ type Device struct {
 }
 
 type Meta struct {
-	Key     string `json:"key"`
 	Name    string `json:"name"`
 	Content string `json:"content"`
 }
@@ -138,33 +136,38 @@ func handlerAddURL(c *fiber.Ctx) error {
 	return c.JSON(body)
 }
 
+func fiberError(message string) fiber.Map {
+	return fiber.Map{
+		"Title": "Redirected",
+		"URL":   "",
+		"Meta":  "[]",
+		"Error": message,
+	}
+}
+
 func handlerRedirectURL(c *fiber.Ctx) error {
 	regHash, _ := regexp.Compile("^[a-zA-Z0-9]+")
 
 	ipAddr := c.IP()
 	if len(c.Params("hash")) != 4 {
-		return c.Status(fiber.StatusInternalServerError).SendString("Invalid URL redirect")
+		return c.Render("short-url", fiberError("Invalid URL redirect"))
 	}
-	log.Println(c.Params("hash"))
-	log.Println(regHash.FindStringSubmatch(c.Params("hash")))
 
 	hashKey := regHash.FindStringSubmatch(c.Params("hash"))[0]
 	stx, err := pgx.Begin()
 	if err != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 
-	short, err := stx.QueryOne("SELECT url FROM shorturl WHERE hash = $1", hashKey)
+	short, err := stx.QueryOne("SELECT title, meta, url FROM shorturl WHERE hash = $1", hashKey)
 	if stx.IsError(err) != nil {
-		return c.SendString("Invalid URL redirect")
+		return c.Render("short-url", fiberError("Invalid URL redirect"))
 	}
 
 	// metaBody, err := fetch("GET", short["url"])
 	// if stx.IsError(err) != nil {
-	// 	return c.SendString(err.Error())
+	// 	return c.Render("short-url", fiberError(err.Error()))
 	// }
-
-	// log.Printf("%s", string(metaBody))
 
 	raw := string(c.Request().Header.Header())
 	regUserAgent, _ := regexp.Compile("(?i)user-agent:(.*?)\n")
@@ -183,11 +186,11 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	var res map[string]interface{}
 	body, err := fetch("GET", fmt.Sprintf("http://ip-api.com/json/%s?fields=status,country,isp,proxy,hosting", ipAddr))
 	if stx.IsError(err) != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 
 	if err := json.Unmarshal(body, &res); stx.IsError(err) != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 
 	if res["status"] == "fail" {
@@ -204,7 +207,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		Hosting: res["hosting"].(bool),
 	})
 	if stx.IsError(err) != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 
 	sDevice, err := json.Marshal(Device{
@@ -216,7 +219,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		Bot:       agent.Bot,
 	})
 	if stx.IsError(err) != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 
 	timeNow := time.Now()
@@ -229,7 +232,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 			RETURNING visited
 		;`, ipAddr, hashKey, res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
 	if stx.IsError(err) != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 
 	visited := track.ToTime("visited")
@@ -237,30 +240,37 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	if time.Since(visited).Minutes() > 30 || int16(timeNow.Sub(visited).Seconds()) < 1 {
 		err = stx.Execute("UPDATE shorturl SET hit = hit + 1 WHERE hash = $1", hashKey)
 		if stx.IsError(err) != nil {
-			return c.SendString(err.Error())
+			return c.Render("short-url", fiberError(err.Error()))
 		}
 		err = stx.Execute("UPDATE shorturl_tracking SET visited = $2 WHERE hash = $1", hashKey, timeNow.Format(time.RFC1123Z))
 		if stx.IsError(err) != nil {
-			return c.SendString(err.Error())
+			return c.Render("short-url", fiberError(err.Error()))
 		}
 
 		err := stx.Execute(`INSERT INTO shorturl_history (hash, agent, device) VALUES ($1,$2,$3);`, hashKey, string(sAgent), string(sDevice))
 		if stx.IsError(err) != nil {
-			return c.SendString(err.Error())
+			return c.Render("short-url", fiberError(err.Error()))
 		}
 	}
 
 	nSeconds := 3
 	if err := stx.Commit(); err != nil {
-		return c.SendString(err.Error())
+		return c.Render("short-url", fiberError(err.Error()))
 	}
 	if appIsProduction {
 		c.Response().Header.Add("Refresh", fmt.Sprintf("%d; url=%s", nSeconds, short["url"]))
 	}
 
+	// <meta name="title" content="asdasdasdasdasd">
+	// <meta name="description" content="asdasdasdasdasd">
+	// <meta name="keywords" content="asd">
+	// <meta name="robots" content="noindex, nofollow">
+	// <meta name="language" content="English">
+
 	return c.Render("short-url", fiber.Map{
-		"Title":   "Hello, World!",
-		"URL":     short["url"],
-		"Seconds": nSeconds,
+		"Title": short["title"],
+		"URL":   short["url"],
+		"Meta":  short["meta"],
+		"Error": "",
 	})
 }

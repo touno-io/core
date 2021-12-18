@@ -64,7 +64,7 @@ func main() {
 			return nil
 		},
 	})
-	app.Static("/", "./assets")
+	app.Static("/assets", "./assets")
 
 	app.Use(handerMiddlewareSecurity)
 
@@ -78,6 +78,61 @@ func main() {
 	api := app.Group("/api", func(c *fiber.Ctx) error {
 		return c.Next()
 	})
+	// stx, err := pgx.Begin()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	// raw, err := stx.Query("SELECT hash, url FROM shorturl WHERE title = '' OR title IS NULL")
+	// if stx.IsError(err) != nil {
+	// 	log.Fatal(err)
+	// }
+	// shorturl, err := stx.FetchAll(raw)
+	// for _, row := range shorturl {
+	// 	if stx.IsError(err) != nil {
+	// 		log.Fatal(err)
+	// 	}
+	// 	log.Println(row)
+	// 	metaItem := []*Meta{}
+	// 	c := colly.NewCollector()
+
+	// 	c.OnHTML("html", func(e *colly.HTMLElement) {
+	// 		title := e.ChildText("title")
+	// 		for _, name := range e.ChildAttrs("meta", "name") {
+	// 			if name == "optimizely-datafile" {
+	// 				continue
+	// 			}
+	// 			value := e.ChildAttrs(fmt.Sprintf(`meta[name="%s"]`, name), "content")
+	// 			if len(value) == 0 {
+	// 				continue
+	// 			}
+	// 			metaItem = append(metaItem, &Meta{Name: name, Content: value[0]})
+
+	// 			if name == "twitter:title" {
+	// 				title = value[0]
+	// 			}
+	// 		}
+
+	// 		if title == "" {
+	// 			title = row["url"]
+	// 		}
+	// 		data, err := json.Marshal(metaItem)
+	// 		if stx.IsError(err) != nil {
+	// 			log.Fatal(err)
+	// 		}
+
+	// 		err = stx.ExecutePrint("UPDATE shorturl SET title = $2, meta = $3::json WHERE hash = $1", row["hash"], title, strings.ReplaceAll(string(data), "'", "''"))
+	// 		if stx.IsError(err) != nil {
+	// 			log.Fatal(err)
+	// 		}
+
+	// 	})
+	// 	c.Visit(row["url"])
+	// }
+
+	// if err := stx.Commit(); err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	// api.Use("/", basicauth.New(basicauth.Config{
 	// 	Users: map[string]string{},
@@ -103,22 +158,6 @@ func main() {
 	app.Use(func(c *fiber.Ctx) error {
 		return fiber.ErrNotFound
 	})
-
-	// c := colly.NewCollector()
-	// // Find and visit all links
-	// c.OnHTML("html", func(e *colly.HTMLElement) {
-	// 	title := e.ChildText("title")
-	// 	fmt.Printf("title: %q\n", title)
-	// 	for _, name := range e.ChildAttrs("meta", "name") {
-	// 		value := e.ChildAttrs(fmt.Sprintf(`meta[name="%s"]`, name), "content")
-	// 		fmt.Printf("meta: %q = %q\n", name, value[0])
-	// 		if name == "twitter:title" {
-	// 			title = value[0]
-	// 		}
-	// 	}
-	// })
-
-	// c.Visit("https://discord.gg/QDccF497Mw")
 
 	go appFiberListen(app, ":3000")
 
