@@ -1,0 +1,12 @@
+User-Agent:Googlebot
+User-Agent:Googlebot-Mobile
+User-Agent:Bingbot
+Crawl-delay:0.1
+Disallow: /auth
+Disallow: /url
+Disallow: /health
+
+User-agent: *
+Crawl-delay:0.1
+Allow: /
+Allow: /s/*
