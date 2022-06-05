@@ -48,6 +48,8 @@ func init() {
 	appTitle = fmt.Sprintf("%s@%s", appName, appVersion)
 
 	log.SetFlags(log.Lshortfile | log.Ltime)
+
+	goose.SetTableName("db_version")
 }
 
 func main() {
@@ -55,8 +57,12 @@ func main() {
 	ctx := context.Background()
 	pgx.Connect(&ctx, appTitle)
 
-	if false {
-		if err := goose.Run("up", pgx.DB, "./database", "", "sql"); err != nil {
+	if dbVersion, err := goose.EnsureDBVersion(pgx.DB); dbVersion == 0 {
+		if err != nil {
+			log.Panic(err)
+		}
+
+		if err = goose.Run("up", pgx.DB, "./database"); err != nil {
 			log.Panic(err)
 		}
 	}
