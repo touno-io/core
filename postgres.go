@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
 	"github.com/lib/pq"
 )
@@ -460,4 +461,22 @@ func elapsedDuration(start time.Time) (time.Duration, string) {
 // Round math Round decimal
 func Round(n float64, m float64) float64 {
 	return math.Round(n*math.Pow(10, m)) / math.Pow(10, m)
+}
+
+func IsRollbackThrow(err error, stx *PGTx) bool {
+	if err != nil {
+		log.Print(err)
+		sentry.CaptureException(err)
+		if stx != nil && !stx.Closed {
+			stx.Rollback()
+		}
+	}
+	return err != nil
+}
+
+func IsRollback(err error, stx *PGTx) bool {
+	if err != nil && !stx.Closed {
+		stx.Rollback()
+	}
+	return err != nil
 }

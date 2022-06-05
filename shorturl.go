@@ -61,13 +61,13 @@ func handlerGetURL(c *fiber.Ctx) error {
 		return c.SendString(err.Error())
 	}
 	rows, err := stx.Query("SELECT url, hash, hit, created FROM shorturl")
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.SendString(err.Error())
 	}
 	url := []*ShortURL{}
 	for rows.Next() {
 		row, err := stx.FetchRow(rows)
-		if stx.IsError(err) != nil {
+		if IsRollback(err, stx) {
 			return c.SendString(err.Error())
 		}
 
@@ -114,7 +114,7 @@ func handlerAddURL(c *fiber.Ctx) error {
 	}
 
 	short, err := stx.QueryOne("SELECT COUNT(*) item FROM shorturl WHERE url = $1", body.URL)
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.SendString(err.Error())
 	}
 
@@ -124,7 +124,7 @@ func handlerAddURL(c *fiber.Ctx) error {
 	hashKey := hashRandomSlug()
 
 	err = stx.Execute("INSERT INTO shorturl (hash,url) VALUES ($1,$2)", hashKey, body.URL)
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.SendString(err.Error())
 	}
 
@@ -160,12 +160,12 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 	}
 
 	short, err := stx.QueryOne("SELECT title, meta, url FROM shorturl WHERE hash = $1", hashKey)
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.Render("short-url", fiberError("Invalid URL redirect"))
 	}
 
 	// metaBody, err := fetch("GET", short["url"])
-	// if stx.IsError(err) != nil {
+	// if asa.IsRollback(err, stx) {
 	// 	return c.Render("short-url", fiberError(err.Error()))
 	// }
 
@@ -185,11 +185,11 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 
 	var res map[string]interface{}
 	body, err := fetch("GET", fmt.Sprintf("http://ip-api.com/json/%s?fields=status,country,isp,proxy,hosting", ipAddr))
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.Render("short-url", fiberError(err.Error()))
 	}
 
-	if err := json.Unmarshal(body, &res); stx.IsError(err) != nil {
+	if err := json.Unmarshal(body, &res); IsRollback(err, stx) {
 		return c.Render("short-url", fiberError(err.Error()))
 	}
 
@@ -206,7 +206,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		Proxy:   res["proxy"].(bool),
 		Hosting: res["hosting"].(bool),
 	})
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.Render("short-url", fiberError(err.Error()))
 	}
 
@@ -218,7 +218,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		Desktop:   agent.Desktop,
 		Bot:       agent.Bot,
 	})
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.Render("short-url", fiberError(err.Error()))
 	}
 
@@ -231,7 +231,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 				isp = excluded.isp, country = excluded.country, proxy = excluded.proxy, hosting = excluded.hosting, hit = st.hit + 1
 			RETURNING visited
 		;`, ipAddr, hashKey, res["isp"].(string), res["country"].(string), res["proxy"].(bool), res["hosting"].(bool), timeNow.Format(time.RFC1123Z))
-	if stx.IsError(err) != nil {
+	if IsRollback(err, stx) {
 		return c.Render("short-url", fiberError(err.Error()))
 	}
 
@@ -239,16 +239,16 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 
 	if time.Since(visited).Minutes() > 30 || int16(timeNow.Sub(visited).Seconds()) < 1 {
 		err = stx.Execute("UPDATE shorturl SET hit = hit + 1 WHERE hash = $1", hashKey)
-		if stx.IsError(err) != nil {
+		if IsRollback(err, stx) {
 			return c.Render("short-url", fiberError(err.Error()))
 		}
 		err = stx.Execute("UPDATE shorturl_tracking SET visited = $2 WHERE hash = $1", hashKey, timeNow.Format(time.RFC1123Z))
-		if stx.IsError(err) != nil {
+		if IsRollback(err, stx) {
 			return c.Render("short-url", fiberError(err.Error()))
 		}
 
 		err := stx.Execute(`INSERT INTO shorturl_history (hash, agent, device) VALUES ($1,$2,$3);`, hashKey, string(sAgent), string(sDevice))
-		if stx.IsError(err) != nil {
+		if IsRollback(err, stx) {
 			return c.Render("short-url", fiberError(err.Error()))
 		}
 	}
