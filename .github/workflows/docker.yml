@@ -11,55 +11,82 @@ jobs:
     runs-on: ubuntu-18.04
     env:
       IMAGE_FILE: Dockerfile
-      IMAGE_NAME: ${{ github.repository }}
+      IMAGE_NAME: touno_io
     steps:
       - uses: actions/checkout@v2
 
-      - name: Build image $IMAGE_NAME
-        run: |
-          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+      # - name: Build image $IMAGE_NAME
+      #   run: |
+      #     VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
 
-          # Strip "v" prefix from tag name
-          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+      #     # Strip "v" prefix from tag name
+      #     [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
 
-          # Use Docker `latest` tag convention
-          [ "$VERSION" == "main" ] && VERSION=latest
+      #     # Use Docker `latest` tag convention
+      #     [ "$VERSION" == "main" ] && VERSION=latest
           
-          docker build -f $IMAGE_FILE -t $IMAGE_NAME --build-arg VERSION=$VERSION .
+      #     docker build -f $IMAGE_FILE -t $IMAGE_NAME --build-arg VERSION=$VERSION .
 
-      - name: Log into docker.io
-        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u ${{ github.actor }} --password-stdin
+      # - name: Log into docker.io
+      #   run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u ${{ github.actor }} --password-stdin
 
-      - name: Push image to docker.io
+      # - name: Push image to docker.io
+      #   run: |
+      #     # Change all uppercase to lowercase
+      #     IMAGE_NAME=$(echo $IMAGE_NAME | tr '[A-Z]' '[a-z]')
+
+      #     # Strip git ref prefix from version
+      #     VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+
+      #     # Strip "v" prefix from tag name
+      #     [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+
+      #     # Use Docker `latest` tag convention
+      #     [ "$VERSION" == "main" ] && VERSION=latest
+
+      #     echo IMAGE_NAME=$IMAGE_NAME
+      #     echo VERSION=$VERSION
+
+      #     docker tag $IMAGE_NAME $IMAGE_NAME:$VERSION
+      #     docker push $IMAGE_NAME:$VERSION
+
+      - name: Prepare 🔰
+        id: prepare
         run: |
-          # Change all uppercase to lowercase
-          IMAGE_NAME=$(echo $IMAGE_NAME | tr '[A-Z]' '[a-z]')
-
-          # Strip git ref prefix from version
           VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
 
           # Strip "v" prefix from tag name
           [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
 
           # Use Docker `latest` tag convention
+          
           [ "$VERSION" == "main" ] && VERSION=latest
 
-          echo IMAGE_NAME=$IMAGE_NAME
-          echo VERSION=$VERSION
+          echo ::set-output name=docker_image::${{github.actor}}/${IMAGE_NAME}
+          echo ::set-output name=version::${VERSION}
+          echo ::set-output name=buildx_args::--platform linux/amd64,linux/386 \
+            --build-arg VERSION=${VERSION} \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VERSION=$VERSION \
+            --tag ${{github.actor}}/$IMAGE_NAME:$VERSION --file $IMAGE_FILE .
 
-          docker tag $IMAGE_NAME $IMAGE_NAME:$VERSION
-          docker push $IMAGE_NAME:$VERSION
+      - name: Set up Docker Buildx 📐
+        uses: crazy-max/ghaction-docker-buildx@v3
 
-      # - name: Rollup Image Container
-      #   uses: actions-hub/kubectl@master
-      #   env:
-      #     KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-      #   with:
-      #     args: image deploy/uat-$(System.DefinitionName) $(System.DefinitionName)=$IMAGE_NAME
+      - name: Docker Buildx ⚙️
+        run: docker buildx build --output "type=image,push=false" ${{ steps.prepare.outputs.buildx_args }}
 
-      # - name: Restart Deployment Container
-      #   uses: actions-hub/kubectl@master
-      #   env:
-      #     KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-      #   with:
-      #     args: restart deploy/sit-$(System.DefinitionName)
+      - name: Login to DockerHub
+        if: success() && github.event_name != 'pull_request'
+        uses: docker/login-action@v1
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Docker Push 📌
+        if: success() && github.event_name != 'pull_request'
+        run: docker buildx build --output "type=image,push=true" ${{ steps.prepare.outputs.buildx_args }}
+
+      - name: Inspect 🔍
+        if: always() && github.event_name != 'pull_request'
+        run: docker buildx imagetools inspect ${{ steps.prepare.outputs.docker_image }}:${{ steps.prepare.outputs.version }}
