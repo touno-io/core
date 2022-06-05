@@ -12,6 +12,7 @@ jobs:
     env:
       IMAGE_FILE: Dockerfile
       IMAGE_NAME: touno_io
+      PLATFORMS: linux/amd64,linux/386,linux/arm64
     steps:
       - uses: actions/checkout@v2
 
@@ -64,7 +65,7 @@ jobs:
 
           echo ::set-output name=docker_image::${{github.actor}}/${IMAGE_NAME}
           echo ::set-output name=version::${VERSION}
-          echo ::set-output name=buildx_args::--platform linux/amd64,linux/386 \
+          echo ::set-output name=buildx_args::--platform $PLATFORMS \
             --build-arg VERSION=${VERSION} \
             --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
             --build-arg VERSION=$VERSION \
