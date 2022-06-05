@@ -2,8 +2,8 @@ User-Agent:Googlebot
 User-Agent:Googlebot-Mobile
 User-Agent:Bingbot
 Crawl-delay:0.1
-Disallow: /auth
-Disallow: /url
+Disallow: /auth/*
+Disallow: /api/*
 Disallow: /health
 
 User-agent: *

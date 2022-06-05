@@ -15,6 +15,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/template/html"
+	"github.com/pressly/goose/v3"
 	"github.com/tmilewski/goenv"
 )
 
@@ -53,6 +54,12 @@ func main() {
 	gracefulStop := make(chan os.Signal, 1)
 	ctx := context.Background()
 	pgx.Connect(&ctx, appTitle)
+
+	if false {
+		if err := goose.Run("up", pgx.DB, "./database", "", "sql"); err != nil {
+			log.Panic(err)
+		}
+	}
 
 	engine := html.New("./views", ".html")
 	app := fiber.New(fiber.Config{
