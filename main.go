@@ -57,13 +57,15 @@ func main() {
 	ctx := context.Background()
 	pgx.Connect(&ctx, appTitle)
 
-	if dbVersion, err := goose.EnsureDBVersion(pgx.DB); dbVersion == 0 {
-		if err != nil {
-			log.Panic(err)
-		}
+	if _, err := os.Stat("./database"); !os.IsNotExist(err) {
+		if dbVersion, err := goose.EnsureDBVersion(pgx.DB); dbVersion == 0 {
+			if err != nil {
+				log.Panic(err)
+			}
 
-		if err = goose.Run("up", pgx.DB, "./database"); err != nil {
-			log.Panic(err)
+			if err = goose.Run("up", pgx.DB, "./database"); err != nil {
+				log.Panic(err)
+			}
 		}
 	}
 
@@ -96,7 +98,7 @@ func main() {
 	api.Post("/url", handlerAddURL)
 
 	app.Use(func(c *fiber.Ctx) error {
-		return fiber.ErrNotFound
+		return c.Render("404", fiber.Map{})
 	})
 
 	go appFiberListen(app, ":3000")
