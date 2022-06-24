@@ -16,41 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      # - name: Build image $IMAGE_NAME
-      #   run: |
-      #     VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
-
-      #     # Strip "v" prefix from tag name
-      #     [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
-
-      #     # Use Docker `latest` tag convention
-      #     [ "$VERSION" == "main" ] && VERSION=latest
-          
-      #     docker build -f $IMAGE_FILE -t $IMAGE_NAME --build-arg VERSION=$VERSION .
-
-      # - name: Log into docker.io
-      #   run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u ${{ github.actor }} --password-stdin
-
-      # - name: Push image to docker.io
-      #   run: |
-      #     # Change all uppercase to lowercase
-      #     IMAGE_NAME=$(echo $IMAGE_NAME | tr '[A-Z]' '[a-z]')
-
-      #     # Strip git ref prefix from version
-      #     VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
-
-      #     # Strip "v" prefix from tag name
-      #     [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
-
-      #     # Use Docker `latest` tag convention
-      #     [ "$VERSION" == "main" ] && VERSION=latest
-
-      #     echo IMAGE_NAME=$IMAGE_NAME
-      #     echo VERSION=$VERSION
-
-      #     docker tag $IMAGE_NAME $IMAGE_NAME:$VERSION
-      #     docker push $IMAGE_NAME:$VERSION
-
       - name: Prepare 🔰
         id: prepare
         run: |
