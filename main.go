@@ -71,7 +71,7 @@ func main() {
 			return nil
 		},
 	})
-	app.Static("/assets", "./assets")
+	app.Static("/", "./assets")
 
 	app.Use(handerMiddlewareSecurity)
 
