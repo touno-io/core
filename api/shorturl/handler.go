@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -187,8 +186,6 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 
 		if len(connectingIp) > 0 {
 			ipAddr = strings.TrimSpace(connectingIp[1])
-		} else if ipAddr == "127.0.0.1" || ipAddr == "::1" {
-			ipAddr = os.Getenv("IP_LOCALHOST")
 		}
 
 		json := jsoniter.ConfigCompatibleWithStandardLibrary
