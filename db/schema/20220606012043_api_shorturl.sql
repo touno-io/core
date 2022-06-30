@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS "public"."shorturl_tracking" (
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS "public"."shorturl";
-DROP TABLE IF EXISTS "public"."shorturl_history";
-DROP TABLE IF EXISTS "public"."shorturl_tracking";
+-- DROP TABLE IF EXISTS "public"."shorturl";
+-- DROP TABLE IF EXISTS "public"."shorturl_history";
+-- DROP TABLE IF EXISTS "public"."shorturl_tracking";
 -- +goose StatementEnd
