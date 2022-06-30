@@ -2,10 +2,33 @@ package api
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
 )
+
+const (
+	ENV     = "ENV"
+	VERSION = "VERSION"
+)
+
+var (
+	IsProduction bool
+	Version      string = ""
+)
+
+func init() {
+	IsProduction = os.Getenv(ENV) == "production"
+
+	content, err := ioutil.ReadFile(VERSION)
+	if err != nil {
+		content, _ = ioutil.ReadFile(fmt.Sprintf("../%s", VERSION))
+	}
+	Version = strings.TrimSpace(string(content))
+}
 
 type HTTP struct {
 	Code  int     `json:"code,omitempty"`

@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -17,36 +15,29 @@ import (
 	"github.com/gofiber/template/html"
 	"github.com/pressly/goose/v3"
 	"github.com/tmilewski/goenv"
+	"github.com/touno-io/core/api"
+	"github.com/touno-io/core/api/shorturl"
 	"github.com/touno-io/core/db"
 )
 
 const (
-	_ENV     = "ENV"
-	_VERSION = "VERSION"
+	ENV     = "ENV"
+	VERSION = "VERSION"
 )
 
 var (
-	appName         string = "touno-io/core"
-	appVersion      string = ""
-	appTitle        string = ""
-	appIsProduction bool
-	pgx             *db.PGClient = &db.PGClient{}
+	appName  string       = "touno-io/core"
+	appTitle string       = ""
+	pgx      *db.PGClient = &db.PGClient{}
 )
 
 func init() {
-	appIsProduction = os.Getenv(_ENV) == "production"
-	if !appIsProduction {
+	if !api.IsProduction {
 		goenv.Load()
-
 	}
 	rand.Seed(time.Now().UnixNano())
 
-	content, err := ioutil.ReadFile(_VERSION)
-	if err != nil {
-		content, _ = ioutil.ReadFile(fmt.Sprintf("../%s", _VERSION))
-	}
-	appVersion = strings.TrimSpace(string(content))
-	appTitle = fmt.Sprintf("%s@%s", appName, appVersion)
+	appTitle = fmt.Sprintf("%s@%s", appName, api.Version)
 
 	log.SetFlags(log.Lshortfile | log.Ltime)
 
@@ -58,13 +49,13 @@ func main() {
 	ctx := context.Background()
 	pgx.Connect(&ctx, appTitle)
 
-	if _, err := os.Stat("./database"); !os.IsNotExist(err) {
+	if _, err := os.Stat("./db/schema"); !os.IsNotExist(err) {
 		if dbVersion, err := goose.EnsureDBVersion(pgx.DB); dbVersion == 0 {
 			if err != nil {
 				log.Panic(err)
 			}
 
-			if err = goose.Run("up", pgx.DB, "./database"); err != nil {
+			if err = goose.Run("up", pgx.DB, "./db/schema"); err != nil {
 				log.Panic(err)
 			}
 		}
@@ -89,14 +80,14 @@ func main() {
 	})
 
 	app.Get("/health", handlerHealth)
-	app.Get("/s/:hash", handlerRedirectURL)
+	app.Get("/s/:hash", shorturl.HandlerRedirectURL(pgx))
 
-	api := app.Group("/api", func(c *fiber.Ctx) error {
+	appApi := app.Group("/api", func(c *fiber.Ctx) error {
 		return c.Next()
 	})
 
-	api.Get("/url", handlerGetURL)
-	api.Post("/url", handlerAddURL)
+	appApi.Get("/url", shorturl.HandlerGetURL(pgx))
+	appApi.Post("/url", shorturl.HandlerAddURL(pgx))
 
 	// app.Use(func(c *fiber.Ctx) error {
 	// 	return c.Render("404", fiber.Map{})
@@ -108,7 +99,7 @@ func main() {
 	<-gracefulStop
 	log.Println("Graceful Exiting...")
 
-	if appIsProduction {
+	if api.IsProduction {
 		if err := app.Shutdown(); err != nil {
 			log.Fatalf("Fiber: %s", err)
 		}
