@@ -17,6 +17,7 @@ import (
 	"github.com/gofiber/template/html"
 	"github.com/pressly/goose/v3"
 	"github.com/tmilewski/goenv"
+	"github.com/touno-io/core/db"
 )
 
 const (
@@ -29,7 +30,7 @@ var (
 	appVersion      string = ""
 	appTitle        string = ""
 	appIsProduction bool
-	pgx             *PGClient = &PGClient{}
+	pgx             *db.PGClient = &db.PGClient{}
 )
 
 func init() {

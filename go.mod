@@ -29,3 +29,6 @@ require (
 	golang.org/x/sys v0.0.0-20220627191245-f75cf1eec38b // indirect
 	gopkg.in/mail.v2 v2.3.1
 )
+
+replace github.com/touno-io/core/db => ./db
+replace github.com/touno-io/core/api => ./api

@@ -253,7 +253,7 @@ func handlerRedirectURL(c *fiber.Ctx) error {
 		}
 	}
 
-	nSeconds := 3
+	nSeconds := 2
 	if err := stx.Commit(); err != nil {
 		return c.Render("short-url", fiberError(err.Error()))
 	}
