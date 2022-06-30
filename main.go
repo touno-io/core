@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	appName         string = "ouno-api"
+	appName         string = "touno-io/core"
 	appVersion      string = ""
 	appTitle        string = ""
 	appIsProduction bool
@@ -97,9 +97,9 @@ func main() {
 	api.Get("/url", handlerGetURL)
 	api.Post("/url", handlerAddURL)
 
-	app.Use(func(c *fiber.Ctx) error {
-		return c.Render("404", fiber.Map{})
-	})
+	// app.Use(func(c *fiber.Ctx) error {
+	// 	return c.Render("404", fiber.Map{})
+	// })
 
 	go appFiberListen(app, ":3000")
 
