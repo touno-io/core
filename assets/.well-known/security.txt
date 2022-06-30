@@ -1,0 +1,4 @@
+Contact: https://mr.touno.io/
+Canonical: https://touno.io/.well-known/security.txt
+Policy: https://policy.touno.io
+Preferred-Languages: th
