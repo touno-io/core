@@ -23,14 +23,15 @@ const (
 	PGUSER     = "PG_USER"
 	PGPASSWORD = "PG_PASS"
 	PGDATABASE = "PG_DBNAME"
+	PGSSLMODE  = "PG_SSLMODE"
 	PGLIFETIME = "PG_LIFETIME"
 	PGMAXIDLE  = "PG_MAXIDLE"
 	PGMAXCONN  = "PG_MAXCONN"
 )
 
 func getDSN(appName string) string {
-	sslmode := "require"
-	if strings.Contains(os.Getenv(PGHOST), "localhost") {
+	sslmode := os.Getenv(PGSSLMODE)
+	if strings.Contains(os.Getenv(PGSSLMODE), "") {
 		sslmode = "disable"
 	}
 
