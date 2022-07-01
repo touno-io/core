@@ -17,6 +17,7 @@ var (
 	logInfo  *log.Logger
 	logWarn  *log.Logger
 	logError *log.Logger
+	Trace    *log.Logger
 )
 
 func init() {
@@ -25,8 +26,10 @@ func init() {
 	logNone = log.New(os.Stdout, "", 0)
 	logDebug = log.New(os.Stdout, "[Debug] ", 0)
 	logInfo = log.New(os.Stdout, " [Info] ", 0)
-	logError = log.New(os.Stdout, "[Error] ", 0)
+	logError = log.New(os.Stderr, "[Error] ", 0)
 	logWarn = log.New(os.Stdout, " [Warn] ", 0)
+	Trace = log.New(os.Stderr, "[TRACE] ", 0)
+	Trace.SetFlags(log.Ltime | log.Lshortfile)
 
 	logNone.SetOutput(ioutil.Discard)
 	logDebug.SetOutput(ioutil.Discard)
@@ -37,7 +40,7 @@ func init() {
 		logDebug.SetFlags(log.Ltime)
 		logInfo.SetFlags(log.Ltime)
 		logWarn.SetFlags(log.Ltime)
-		logError.SetFlags(log.Ltime)
+		logError.SetFlags(log.Ltime | log.Lshortfile)
 	}
 }
 
@@ -49,7 +52,7 @@ func DisableOutput() {
 	logError.SetOutput(ioutil.Discard)
 }
 
-func DebugNewline() {
+func newline() {
 	logNone.Print("\n")
 }
 
@@ -87,17 +90,9 @@ func Warnf(format string, v ...interface{}) {
 
 func Error(v ...interface{}) {
 	logError.Println(v...)
-	// sentry.CaptureException(errors.New(v...))
+	sentry.CaptureException(v[0].(error))
 }
 func Errorf(format string, v ...interface{}) {
 	logError.Printf(format, v...)
 	sentry.CaptureException(fmt.Errorf(format, v...))
-}
-
-func Fatal(v ...interface{}) {
-	logError.Fatal(v...)
-}
-
-func Fatalf(format string, v ...interface{}) {
-	logError.Fatalf(format, v...)
 }

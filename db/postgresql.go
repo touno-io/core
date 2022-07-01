@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/storage/postgres"
 	"github.com/lib/pq"
 )
 
@@ -23,20 +24,42 @@ const (
 	PGUSER     = "PG_USER"
 	PGPASSWORD = "PG_PASS"
 	PGDATABASE = "PG_DBNAME"
+	PGCACHE    = "PG_DBCACHE"
 	PGSSLMODE  = "PG_SSLMODE"
 	PGLIFETIME = "PG_LIFETIME"
 	PGMAXIDLE  = "PG_MAXIDLE"
 	PGMAXCONN  = "PG_MAXCONN"
 )
 
-func getDSN(appName string) string {
+func Cache(tableName string) *postgres.Storage {
+	port, _ := strconv.ParseInt(os.Getenv(PGPORT), 0, 32)
+
+	conn := postgres.New(postgres.Config{
+		Host:       os.Getenv(PGHOST),
+		Port:       int(port),
+		Username:   os.Getenv(PGUSER),
+		Password:   os.Getenv(PGPASSWORD),
+		Database:   os.Getenv(PGCACHE),
+		Table:      tableName,
+		SslMode:    getSSLMode(),
+		Reset:      false,
+		GCInterval: 10 * time.Second,
+	})
+	Infof("'cache::%s/%s' (%s) ", os.Getenv(PGHOST), os.Getenv(PGCACHE), tableName)
+	return conn
+}
+
+func getSSLMode() string {
 	sslmode := os.Getenv(PGSSLMODE)
 	if strings.Contains(os.Getenv(PGSSLMODE), "") {
 		sslmode = "disable"
 	}
+	return sslmode
+}
 
+func getDSN(appName string) string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s application_name='%s'",
-		os.Getenv(PGHOST), os.Getenv(PGPORT), os.Getenv(PGUSER), os.Getenv(PGPASSWORD), os.Getenv(PGDATABASE), sslmode, appName)
+		os.Getenv(PGHOST), os.Getenv(PGPORT), os.Getenv(PGUSER), os.Getenv(PGPASSWORD), os.Getenv(PGDATABASE), getSSLMode(), appName)
 }
 
 type PGClient struct {
@@ -114,21 +137,21 @@ func (pg *PGClient) Connect(c *context.Context, appTitle string) {
 
 	pg.DB, err = sql.Open("postgres", getDSN(appTitle))
 	if err != nil {
-		Fatal("Postgres:: Open", err)
+		Trace.Fatal("Postgres:: Open", err)
 	}
 
 	if os.Getenv(PGLIFETIME) != "" {
 		lifeTimeSecond, err := strconv.ParseInt(os.Getenv(PGLIFETIME), 0, 64)
 		if err != nil {
-			Fatal("ENV::PGLIFETIME ParseInt", err)
+			Error("ENV::PGLIFETIME ParseInt", err)
 		}
 		maxIdle, err := strconv.ParseInt(os.Getenv(PGMAXIDLE), 0, 32)
 		if err != nil {
-			Fatal("ENV::PGMAXIDLE ParseInt", err)
+			Error("ENV::PGMAXIDLE ParseInt", err)
 		}
 		maxConn, err := strconv.ParseInt(os.Getenv(PGMAXCONN), 0, 32)
 		if err != nil {
-			Fatal("ENV::PGMAXCONN ParseInt", err)
+			Error("ENV::PGMAXCONN ParseInt", err)
 		}
 
 		pg.DB.SetConnMaxLifetime(time.Second * time.Duration(lifeTimeSecond))
@@ -138,7 +161,7 @@ func (pg *PGClient) Connect(c *context.Context, appTitle string) {
 
 	err = pg.DB.PingContext(*pg.ctx)
 	if err != nil {
-		Fatal("Postgres:: PingContext", err)
+		Trace.Fatal("Postgres:: PingContext", err)
 	}
 
 	Infof("'query::%s/%s' Connected ", os.Getenv(PGHOST), os.Getenv(PGDATABASE))
