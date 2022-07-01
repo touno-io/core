@@ -69,7 +69,7 @@ func HandlerGetURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		if err != nil {
 			return c.SendString(err.Error())
 		}
-		rows, err := stx.Query("SELECT url, hash, hit, created FROM shorturl")
+		rows, err := stx.Query("SELECT url, hash, hit, created FROM shorturl ORDER BY created DESC")
 		if db.IsRollback(err, stx) {
 			return c.SendString(err.Error())
 		}
@@ -171,11 +171,6 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 			return c.Render("short-url", fiberError("Invalid URL redirect"))
 		}
 
-		// metaBody, err := fetch("GET", short["url"])
-		// if asa.db.IsRollback(err, stx) {
-		// 	return c.Render("short-url", fiberError(err.Error()))
-		// }
-
 		raw := string(c.Request().Header.Header())
 		regUserAgent, _ := regexp.Compile("(?i)user-agent:(.*?)\n")
 		hAgent := regUserAgent.FindStringSubmatch(raw)
@@ -188,6 +183,10 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 			ipAddr = strings.TrimSpace(connectingIp[1])
 		}
 
+		if ipAddr == "127.0.0.1" || ipAddr == "::1" {
+			ipAddr = "touno.io"
+		}
+
 		json := jsoniter.ConfigCompatibleWithStandardLibrary
 
 		client := resty.New()
@@ -197,8 +196,9 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		var res map[string]interface{}
 		_, err = client.R().
 			SetHeader("Content-Type", "application/json").
-			SetResult(res).
+			SetResult(&res).
 			SetPathParams(map[string]string{"ipAddr": ipAddr}).
+			SetError(&res).
 			Post("http://ip-api.com/json/{ipAddr}?fields=status,country,isp,proxy,hosting")
 
 		if db.IsRollback(err, stx) {

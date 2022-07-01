@@ -50,7 +50,7 @@ func ProviderTelegram(c *fiber.Ctx, req *RequestNotice, notice db.PGRow) (string
 	client.JSONUnmarshal = json.Unmarshal
 
 	var fixText = regexp.MustCompile(`([-.])`)
-	reqSender := TelegramRequest{Mode: room.Mode, Text: fixText.ReplaceAllString(req.Message, `\$1`)}
+	reqSender := &TelegramRequest{Mode: room.Mode, Text: fixText.ReplaceAllString(req.Message, `\$1`)}
 	resSender := &TelegramResponse{}
 
 	_, err := client.R().

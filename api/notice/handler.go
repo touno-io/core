@@ -61,7 +61,6 @@ func HandlerNoticeMessage(pgx *db.PGClient) func(*fiber.Ctx) error {
 
 		i := 0
 		errJob := 0
-		var errorAllMessage string
 		var historyInserted []string
 		for pgNotice.Next() {
 			notice, err := stx.FetchRow(pgNotice)
@@ -85,18 +84,18 @@ func HandlerNoticeMessage(pgx *db.PGClient) func(*fiber.Ctx) error {
 				case TELEGRAM:
 					if reqBody, resBody, err = ProviderTelegram(c, req, notice); db.IsRollbackThrow(err, nil) {
 						errMsg = fmt.Sprintf("Provider '%s'::%s", notice["e_type"], err)
-						errorAllMessage = strings.TrimSpace(fmt.Sprintf("%s\n%s", errorAllMessage, errMsg))
+						res.Error = strings.TrimSpace(fmt.Sprintf("%s\n%s", res.Error, errMsg))
 						db.Error(errMsg)
 					}
 				case EMAIL:
 					if reqBody, resBody, err = ProviderEmail(c, notice); db.IsRollbackThrow(err, nil) {
 						errMsg = fmt.Sprintf("Provider '%s'::%s", notice["e_type"], err)
-						errorAllMessage = strings.TrimSpace(fmt.Sprintf("%s\n%s", errorAllMessage, errMsg))
+						res.Error = strings.TrimSpace(fmt.Sprintf("%s\n%s", res.Error, errMsg))
 						db.Error(errMsg)
 					}
 				default:
 					errMsg = fmt.Sprintf("Provider '%s'::Not Implemented", notice["e_type"])
-					errorAllMessage = strings.TrimSpace(fmt.Sprintf("%s\n%s", errorAllMessage, errMsg))
+					res.Error = strings.TrimSpace(fmt.Sprintf("%s\n%s", res.Error, errMsg))
 					db.Error(errMsg)
 				}
 
@@ -130,10 +129,6 @@ func HandlerNoticeMessage(pgx *db.PGClient) func(*fiber.Ctx) error {
 			if db.IsRollback(err, stx) {
 				return api.ErrorHandlerThrow(c, fiber.StatusInternalServerError, err)
 			}
-		}
-
-		if errorAllMessage != "" {
-			res.Error = &errorAllMessage
 		}
 
 		if err = stx.Commit(); db.IsRollback(err, stx) {
