@@ -7,5 +7,11 @@
 
 ระบบหลังบ้านของ `TOUNO.io` และใช้ดาต้าเบสของ `PostgreSQL` สำหรับเก็บข้อมูลทั้งหมด
 
+## Features
+
+- `Auth` 
+- `Notice`
+- `Monitor`
+
 ### License
 MIT © 2021 Touno™
