@@ -4,9 +4,8 @@ crawl-delay: 1
 User-Agent: *
 Crawl-delay: 0.1
 
-Disallow: /auth/*
+Disallow: /*/auth/*
 Disallow: /api/*
-Disallow: /health
 
 Allow: /
 Allow: /s/*
