@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -12,10 +11,12 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/template/html"
 	"github.com/pressly/goose/v3"
 	"github.com/tmilewski/goenv"
 	"github.com/touno-io/core/api"
+	"github.com/touno-io/core/api/auth"
 	"github.com/touno-io/core/api/shorturl"
 	"github.com/touno-io/core/db"
 )
@@ -39,8 +40,6 @@ func init() {
 
 	appTitle = fmt.Sprintf("%s@%s", appName, api.Version)
 
-	log.SetFlags(log.Lshortfile | log.Ltime)
-
 	goose.SetTableName("db_version")
 }
 
@@ -52,11 +51,11 @@ func main() {
 	if _, err := os.Stat("./db/schema"); !os.IsNotExist(err) {
 		if dbVersion, err := goose.EnsureDBVersion(pgx.DB); dbVersion == 0 {
 			if err != nil {
-				log.Panic(err)
+				db.Trace.Fatal(err)
 			}
 
 			if err = goose.Run("up", pgx.DB, "./db/schema"); err != nil {
-				log.Panic(err)
+				db.Trace.Fatal(err)
 			}
 		}
 	}
@@ -71,16 +70,54 @@ func main() {
 			return nil
 		},
 	})
+	// app.Use(etag.New())
+	// app.Use(csrf.New(csrf.Config{
+	// 	KeyLookup:      "header:X-Csrf-Token",
+	// 	CookieName:     "csrf_",
+	// 	CookieSameSite: "Strict",
+	// 	Expiration:     3 * time.Hour,
+	// 	KeyGenerator:   utils.UUID,
+	// }))
+
 	app.Static("/", "./assets")
-
-	app.Use(handerMiddlewareSecurity)
-
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Render("index", fiber.Map{})
-	})
-
-	app.Get("/health", handlerHealth)
+	app.Use(api.HanderMiddlewareSecurity)
+	app.Get("/health", api.HandlerHealth)
 	app.Get("/s/:hash", shorturl.HandlerRedirectURL(pgx))
+
+	appV1 := app.Group("/v1")
+
+	// Initialize custom config
+	storeSession := db.Cache("store_session")
+	// storeBlocked := db.Cache("store_blockip")
+
+	appAuth := appV1.Group("/auth")
+	appAuth.Post("/", basicauth.New(basicauth.Config{
+		Authorizer: func(user, pass string) bool {
+			db.Debug(user, pass)
+			return true
+		},
+		Unauthorized: func(c *fiber.Ctx) error {
+			db.Debug("Unauthorized")
+			// if c.IP() != "127.0.0.1" && c.IP() != "::1" && ipBlock[c.IP()] <= 5 {
+			// 	ipBlock[c.IP()] += 1
+			// }
+			// if ipBlock[c.IP()] <= 5 {
+			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+			// } else {
+			// 	return c.Status(403).JSON(api.HTTP{Error: "IP Blocked"})
+			// }
+		},
+		ContextUsername: "_usr",
+		ContextPassword: "_pwd",
+	}), func(c *fiber.Ctx) error {
+		token, err := storeSession.Get("session_id")
+		if err != nil {
+			return c.Status(500).JSON(api.HTTP{Error: fmt.Sprintf("Session Store: %s", err.Error())})
+		}
+		return c.JSON(auth.AuthToken{Token: string(token)})
+	})
+	appAuth.Get("/account", auth.HandlerV1UserInfo(pgx))
+	appAuth.Delete("/", auth.HandlerV1SignOut(pgx))
 
 	appApi := app.Group("/api", func(c *fiber.Ctx) error {
 		return c.Next()
@@ -89,23 +126,23 @@ func main() {
 	appApi.Get("/url", shorturl.HandlerGetURL(pgx))
 	appApi.Post("/url", shorturl.HandlerAddURL(pgx))
 
-	// app.Use(func(c *fiber.Ctx) error {
-	// 	return c.Render("404", fiber.Map{})
-	// })
+	app.Use(func(c *fiber.Ctx) error {
+		return c.Status(404).JSON(&api.HTTP{Error: "not implemented"})
+	})
 
-	go appFiberListen(app, ":3000")
+	go api.FiberListen(app, ":3000")
 
 	signal.Notify(gracefulStop, os.Interrupt, syscall.SIGTERM)
 	<-gracefulStop
-	log.Println("Graceful Exiting...")
+	db.Info("Graceful Exiting...")
 
 	if api.IsProduction {
 		if err := app.Shutdown(); err != nil {
-			log.Fatalf("Fiber: %s", err)
+			db.Trace.Fatalf("Fiber: %s", err)
 		}
 	}
 
 	if err := pgx.Close(); err != nil {
-		log.Fatalf("DB: %s", err)
+		db.Trace.Fatalf("DB: %s", err)
 	}
 }

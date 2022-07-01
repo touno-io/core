@@ -8,6 +8,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
+	"github.com/touno-io/core/db"
 )
 
 const (
@@ -31,8 +32,8 @@ func init() {
 }
 
 type HTTP struct {
-	Code  int     `json:"code,omitempty"`
-	Error *string `json:"error"`
+	Code  int    `json:"code,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // func (e *HTTP) ErrorHandlerThrow(c *fiber.Ctx) error {
@@ -47,26 +48,43 @@ type HTTP struct {
 // }
 
 func ErrorHandlerThrow(c *fiber.Ctx, code int, err error) error {
-	errorMessage := err.Error()
 	if code != fiber.StatusOK && code != fiber.StatusCreated {
 		// Error(err)
 		sentry.CaptureException(err)
 		// } else if err != nil {
 		// 	Warn(err)
 	}
-	return c.Status(code).JSON((HTTP{Code: code, Error: &errorMessage}))
+	return c.Status(code).JSON((HTTP{Code: code, Error: err.Error()}))
 }
 
 func HttpErrorf(code int, err error) *HTTP {
-	errMsg := err.Error()
-	return &HTTP{Code: code, Error: &errMsg}
+	return &HTTP{Code: code, Error: err.Error()}
 }
 func HttpErrorPrint(code int, format string, v ...interface{}) *HTTP {
-	errMsg := fmt.Sprintf(format, v...)
-	return &HTTP{Code: code, Error: &errMsg}
+	return &HTTP{Code: code, Error: fmt.Sprintf(format, v...)}
 }
 
 func HttpErrorPrintf(code int, v ...interface{}) *HTTP {
-	errMsg := fmt.Sprintf("%s", v...)
-	return &HTTP{Code: code, Error: &errMsg}
+	return &HTTP{Code: code, Error: fmt.Sprintf("%s", v...)}
+}
+
+func FiberListen(app *fiber.App, port string) {
+	db.Infof("Fiber Started at '%s'\n", port)
+	if err := app.Listen(port); err != nil {
+		db.Trace.Fatalf("Fiber listen: %+v", err)
+	}
+}
+
+func HanderMiddlewareSecurity(c *fiber.Ctx) error {
+	// Set some security headers:
+	c.Set("X-XSS-Protection", "1; mode=block")
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Download-Options", "noopen")
+	c.Set("X-Frame-Options", "SAMEORIGIN")
+	c.Set("X-DNS-Prefetch-Control", "off")
+	return c.Next()
+}
+
+func HandlerHealth(c *fiber.Ctx) error {
+	return c.SendString("☕")
 }
