@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/storage/postgres"
 	"github.com/lib/pq"
 )
 
@@ -31,25 +30,10 @@ const (
 	PGMAXCONN  = "PG_MAXCONN"
 )
 
-func Cache(tableName string) *postgres.Storage {
-	port, _ := strconv.ParseInt(os.Getenv(PGPORT), 0, 32)
-
-	conn := postgres.New(postgres.Config{
-		Host:       os.Getenv(PGHOST),
-		Port:       int(port),
-		Username:   os.Getenv(PGUSER),
-		Password:   os.Getenv(PGPASSWORD),
-		Database:   os.Getenv(PGCACHE),
-		Table:      tableName,
-		SslMode:    getSSLMode(),
-		Reset:      false,
-		GCInterval: 10 * time.Second,
-	})
-	Infof("'cache::%s/%s' (%s) ", os.Getenv(PGHOST), os.Getenv(PGCACHE), tableName)
-	return conn
-}
+var ErrNoRows error = sql.ErrNoRows
 
 func getSSLMode() string {
+
 	sslmode := os.Getenv(PGSSLMODE)
 	if strings.Contains(os.Getenv(PGSSLMODE), "") {
 		sslmode = "disable"
@@ -176,6 +160,10 @@ func (pg PGRow) ToByte(name string) []byte {
 }
 
 func (pg PGRow) ToBoolean(name string) bool {
+	if pg[name] == "" {
+		return false
+	}
+
 	data, err := strconv.ParseBool(pg[name])
 	if err != nil {
 		Errorf("PGRow.ToBoolean('%s'): %s", name, err)
@@ -205,9 +193,20 @@ func (pg PGRow) ToTime(name string) time.Time {
 	return data
 }
 
-func (pg *PGClient) Begin() (*PGTx, error) {
+const (
+	LevelDefault sql.IsolationLevel = iota
+	LevelReadUncommitted
+	LevelReadCommitted
+	LevelWriteCommitted
+	LevelRepeatableRead
+	LevelSnapshot
+	LevelSerializable
+	LevelLinearizable
+)
+
+func (pg *PGClient) Begin(level sql.IsolationLevel) (*PGTx, error) {
 	// defer EstimatedPrint(time.Now(), fmt.Sprintf("Begin: %+v", pg.ctx))
-	stx, err := pg.DB.BeginTx(*pg.ctx, &sql.TxOptions{Isolation: sql.LevelDefault})
+	stx, err := pg.DB.BeginTx(*pg.ctx, &sql.TxOptions{Isolation: level})
 
 	pgx := PGTx{tx: stx, ctx: pg.ctx}
 	return &pgx, err
@@ -230,7 +229,7 @@ func (stx *PGTx) QueryOne(query string, args ...interface{}) (PGRow, error) {
 		return nil, fmt.Errorf("QueryOne::%s", err.Error())
 	}
 	if !rows.Next() {
-		return nil, fmt.Errorf("empty record")
+		return nil, sql.ErrNoRows
 	}
 	defer rows.Close()
 	return fetchRow(rows)
@@ -243,7 +242,7 @@ func (stx *PGTx) QueryOnePrint(query string, args ...interface{}) (PGRow, error)
 		return nil, fmt.Errorf("QueryOne::%s", err.Error())
 	}
 	if !rows.Next() {
-		return nil, fmt.Errorf("empty record")
+		return nil, sql.ErrNoRows
 	}
 	defer rows.Close()
 	return fetchRow(rows)

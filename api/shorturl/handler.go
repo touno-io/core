@@ -65,7 +65,7 @@ func hashRandomSlug() string {
 
 func HandlerGetURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
-		stx, err := pgx.Begin()
+		stx, err := pgx.Begin(db.LevelDefault)
 		if err != nil {
 			return c.SendString(err.Error())
 		}
@@ -113,7 +113,7 @@ func HandlerAddURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 			return c.SendString(err.Error())
 		}
 
-		stx, err := pgx.Begin()
+		stx, err := pgx.Begin(db.LevelDefault)
 		if err != nil {
 			return c.SendString(err.Error())
 		}
@@ -161,7 +161,7 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		}
 
 		hashKey := regHash.FindStringSubmatch(c.Params("hash"))[0]
-		stx, err := pgx.Begin()
+		stx, err := pgx.Begin(db.LevelDefault)
 		if err != nil {
 			return c.Render("short-url", fiberError(err.Error()))
 		}

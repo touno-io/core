@@ -87,35 +87,19 @@ func main() {
 	appV1 := app.Group("/v1")
 
 	// Initialize custom config
-	storeSession := db.Cache("store_session")
-	// storeBlocked := db.Cache("store_blockip")
+	storeSession := db.CacheNew(pgx, "session")
 
+	stxAuth, err := pgx.Begin(db.LevelDefault)
+	if db.IsRollback(err, stxAuth) {
+		db.Trace.Fatal(err)
+	}
 	appAuth := appV1.Group("/auth")
+
 	appAuth.Post("/", basicauth.New(basicauth.Config{
-		Authorizer: func(user, pass string) bool {
-			db.Debug(user, pass)
-			return true
-		},
-		Unauthorized: func(c *fiber.Ctx) error {
-			db.Debug("Unauthorized")
-			// if c.IP() != "127.0.0.1" && c.IP() != "::1" && ipBlock[c.IP()] <= 5 {
-			// 	ipBlock[c.IP()] += 1
-			// }
-			// if ipBlock[c.IP()] <= 5 {
-			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-			// } else {
-			// 	return c.Status(403).JSON(api.HTTP{Error: "IP Blocked"})
-			// }
-		},
-		ContextUsername: "_usr",
-		ContextPassword: "_pwd",
-	}), func(c *fiber.Ctx) error {
-		token, err := storeSession.Get("session_id")
-		if err != nil {
-			return c.Status(500).JSON(api.HTTP{Error: fmt.Sprintf("Session Store: %s", err.Error())})
-		}
-		return c.JSON(auth.AuthToken{Token: string(token)})
-	})
+		Authorizer:   auth.HandlerV1BasicAuthorizer,
+		Unauthorized: auth.HandlerV1BasicUnauthorized,
+	}), auth.HandlerV1BasicSignIn(pgx, stxAuth, storeSession))
+
 	appAuth.Get("/account", auth.HandlerV1UserInfo(pgx))
 	appAuth.Delete("/", auth.HandlerV1SignOut(pgx))
 
@@ -142,6 +126,16 @@ func main() {
 		}
 	}
 
+	if err := storeSession.Close(); err != nil {
+		db.Trace.Fatalf("session: %s", err)
+	}
+	if !stxAuth.Closed {
+		if err := stxAuth.Commit(); err != nil {
+			db.Trace.Fatalf("stx: %s", err)
+		}
+	}
+
+	db.Debug(" - Close DB Connection")
 	if err := pgx.Close(); err != nil {
 		db.Trace.Fatalf("DB: %s", err)
 	}

@@ -35,7 +35,7 @@ func HandlerNoticeMessage(pgx *db.PGClient) func(*fiber.Ctx) error {
 			}
 		}
 
-		stx, err := pgx.Begin()
+		stx, err := pgx.Begin(db.LevelDefault)
 		if db.IsRollback(err, stx) {
 			return api.ErrorHandlerThrow(c, fiber.StatusInternalServerError, err)
 		}
