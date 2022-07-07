@@ -89,16 +89,12 @@ func main() {
 	// Initialize custom config
 	storeSession := db.CacheNew(pgx, "session")
 
-	stxAuth, err := pgx.Begin(db.LevelDefault)
-	if db.IsRollback(err, stxAuth) {
-		db.Trace.Fatal(err)
-	}
 	appAuth := appV1.Group("/auth")
 
 	appAuth.Post("/", basicauth.New(basicauth.Config{
 		Authorizer:   auth.HandlerV1BasicAuthorizer,
 		Unauthorized: auth.HandlerV1BasicUnauthorized,
-	}), auth.HandlerV1BasicSignIn(pgx, stxAuth, storeSession))
+	}), auth.HandlerV1BasicSignIn(pgx, storeSession))
 
 	appAuth.Get("/account", auth.HandlerV1UserInfo(pgx))
 	appAuth.Delete("/", auth.HandlerV1SignOut(pgx))
@@ -128,11 +124,6 @@ func main() {
 
 	if err := storeSession.Close(); err != nil {
 		db.Trace.Fatalf("session: %s", err)
-	}
-	if !stxAuth.Closed {
-		if err := stxAuth.Commit(); err != nil {
-			db.Trace.Fatalf("stx: %s", err)
-		}
 	}
 
 	db.Debug(" - Close DB Connection")

@@ -10,14 +10,14 @@ const (
 )
 
 func IsRollback(err error, stx *PGTx) bool {
-	if err != nil && !stx.Closed {
+	if err != nil && err != ErrNoRows && !stx.Closed {
 		stx.Rollback()
 	}
 	return err != nil
 }
 
 func IsRollbackThrow(err error, stx *PGTx) bool {
-	if err != nil {
+	if err != nil && err != ErrNoRows {
 		Error(err)
 		sentry.CaptureException(err)
 		if stx != nil && !stx.Closed {

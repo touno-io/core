@@ -47,6 +47,10 @@ type HTTP struct {
 // 	return c.Status(e.Code).JSON((HTTP{Code: e.Code, Error: e.Error}))
 // }
 
+func ThrowInternalServerError(c *fiber.Ctx, err error) error {
+	return ErrorHandlerThrow(c, fiber.StatusInternalServerError, err)
+}
+
 func ErrorHandlerThrow(c *fiber.Ctx, code int, err error) error {
 	if code != fiber.StatusOK && code != fiber.StatusCreated {
 		// Error(err)

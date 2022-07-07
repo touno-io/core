@@ -20,12 +20,13 @@ CREATE TABLE "user_account" (
   "s_display_name" varchar(100) NOT NULL,
   "s_email" varchar(50) UNIQUE NOT NULL,
   "s_pwd" text,
+  "a_public_key" bytea,
+  "a_private_key" bytea,
   "n_object" uuid NOT NULL DEFAULT uuid_generate_v4(),
   "n_level" opt_level NOT NULL DEFAULT 'BANED',
   "t_created" timestamp WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id")
 );
-
 
 CREATE TABLE "user_permission" (
   "id" serial,
@@ -53,7 +54,8 @@ CREATE TABLE "user_session" (
   "s_ipaddr" cidr NOT NULL,
   "o_permission" jsonb NOT NULL DEFAULT '{}'::jsonb,
   "t_created" timestamp WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY ("user_id") REFERENCES "user_account" ("id")
+  FOREIGN KEY ("user_id") REFERENCES "user_account" ("id"),
+  CONSTRAINT uq_session_ip UNIQUE ("user_id", "s_ipaddr")
 );
 
 CREATE TABLE "user_token" (
