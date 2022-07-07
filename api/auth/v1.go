@@ -20,7 +20,7 @@ type AuthToken struct {
 }
 
 type TokenClaims struct {
-	Name string `json:"name"`
+	Name string `json:"dat"`
 	jwt.RegisteredClaims
 }
 
@@ -113,13 +113,10 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			return api.ThrowInternalServerError(c, err)
 		}
 
-		// err = createNewRSAKey(stx, usr["id"])
-		// if err != nil {
-		// 	return api.ThrowInternalServerError(c, err)
-		// }
 		token := jwt.NewWithClaims(jwt.SigningMethodRS256, &TokenClaims{
 			usr["s_display_name"],
 			jwt.RegisteredClaims{
+				NotBefore: jwt.NewNumericDate(time.Now()),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 				Issuer:    c.Locals("username").(string),
@@ -132,7 +129,6 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			return api.ThrowInternalServerError(c, err)
 		}
 
-		// Sign and get the complete encoded token as a string using the secret
 		tokenString, err := token.SignedString(privateKey)
 		if err != nil {
 			return api.ThrowInternalServerError(c, err)
@@ -142,28 +138,24 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatalf("stx: %s", err)
 		}
 
-		// privateKey2, _, err := generateRSAKey()
+		// recheck, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (interface{}, error) {
+		// 	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+		// 		return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
+		// 	}
+
+		// 	return privateKey, nil
+		// })
+		// db.Debugv(recheck)
+
 		// if err != nil {
-		// 	return api.ThrowInternalServerError(c, err)
+		// 	db.Debug(fmt.Errorf("validate: %w", err))
 		// }
 
-		tokenCheck, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (interface{}, error) {
-			return privateKey, nil
-		})
-		if tokenCheck.Valid {
-			fmt.Println("You look nice today")
-		} else if ve, ok := err.(*jwt.ValidationError); ok {
-			if ve.Errors&jwt.ValidationErrorMalformed != 0 {
-				fmt.Println("That's not even a token")
-			} else if ve.Errors&(jwt.ValidationErrorExpired|jwt.ValidationErrorNotValidYet) != 0 {
-				// Token is either expired or not active yet
-				fmt.Println("Timing is everything")
-			} else {
-				fmt.Println("Couldn't handle this token:", err)
-			}
-		} else {
-			fmt.Println("Couldn't handle this token:", err)
-		}
+		// claims, ok := recheck.Claims.(*TokenClaims)
+		// if !ok {
+		// 	db.Debug(fmt.Errorf("validate: invalid"))
+		// }
+		// db.Debugv(claims)
 
 		// db.Debug(string(pemPublic))
 		// db.Debug(string(pemPrivate))
