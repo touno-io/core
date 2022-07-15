@@ -64,11 +64,11 @@ func ErrorHandlerThrow(c *fiber.Ctx, code int, err error) error {
 func HttpErrorf(code int, err error) *HTTP {
 	return &HTTP{Code: code, Error: err.Error()}
 }
-func HttpErrorPrint(code int, format string, v ...interface{}) *HTTP {
+func HttpErrorPrint(code int, format string, v ...any) *HTTP {
 	return &HTTP{Code: code, Error: fmt.Sprintf(format, v...)}
 }
 
-func HttpErrorPrintf(code int, v ...interface{}) *HTTP {
+func HttpErrorPrintf(code int, v ...any) *HTTP {
 	return &HTTP{Code: code, Error: fmt.Sprintf("%s", v...)}
 }
 

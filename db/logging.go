@@ -56,14 +56,14 @@ func newline() {
 	logNone.Print("\n")
 }
 
-func Debug(v ...interface{}) {
+func Debug(v ...any) {
 	logDebug.Println(v...)
 }
 
-func Debugf(format string, v ...interface{}) {
+func Debugf(format string, v ...any) {
 	logDebug.Printf(format, v...)
 }
-func Debugv(v ...interface{}) {
+func Debugv(v ...any) {
 	for i := range v {
 		logDebug.Println("Inspect :", reflect.TypeOf(v[i]).String())
 		result, _ := json.MarshalIndent(v[i], "", "  ")
@@ -72,27 +72,27 @@ func Debugv(v ...interface{}) {
 	logNone.Println("")
 }
 
-func Info(v ...interface{}) {
+func Info(v ...any) {
 	logInfo.Println(v...)
 }
 
-func Infof(format string, v ...interface{}) {
+func Infof(format string, v ...any) {
 	logInfo.Printf(format, v...)
 }
 
-func Warn(v ...interface{}) {
+func Warn(v ...any) {
 	logWarn.Println(v...)
 }
 
-func Warnf(format string, v ...interface{}) {
+func Warnf(format string, v ...any) {
 	logWarn.Printf(format, v...)
 }
 
-func Error(v ...interface{}) {
+func Error(v ...any) {
 	logError.Println(v...)
 	sentry.CaptureException(v[0].(error))
 }
-func Errorf(format string, v ...interface{}) {
+func Errorf(format string, v ...any) {
 	logError.Printf(format, v...)
 	sentry.CaptureException(fmt.Errorf(format, v...))
 }

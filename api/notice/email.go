@@ -34,7 +34,7 @@ type EmailRoom struct {
 // 	OK          bool        `json:"ok"`
 // 	ErrorCode   int32       `json:"error_code,omitempty"`
 // 	Description string      `json:"description,omitempty"`
-// 	Result      interface{} `json:"result"`
+// 	Result      any `json:"result"`
 // }
 
 // const telegramAPI string = "https://api.telegram.org"

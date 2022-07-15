@@ -222,7 +222,7 @@ func (stx *PGTx) Rollback() error {
 	return stx.tx.Rollback()
 }
 
-func (stx *PGTx) QueryOne(query string, args ...interface{}) (PGRow, error) {
+func (stx *PGTx) QueryOne(query string, args ...any) (PGRow, error) {
 	rows, err := sctxQuery(stx.tx, stx.ctx, false, query, args...)
 
 	if err != nil {
@@ -235,7 +235,7 @@ func (stx *PGTx) QueryOne(query string, args ...interface{}) (PGRow, error) {
 	return fetchRow(rows)
 }
 
-func (stx *PGTx) QueryOnePrint(query string, args ...interface{}) (PGRow, error) {
+func (stx *PGTx) QueryOnePrint(query string, args ...any) (PGRow, error) {
 	rows, err := sctxQuery(stx.tx, stx.ctx, true, query, args...)
 
 	if err != nil {
@@ -248,19 +248,19 @@ func (stx *PGTx) QueryOnePrint(query string, args ...interface{}) (PGRow, error)
 	return fetchRow(rows)
 }
 
-func (stx *PGTx) Query(query string, args ...interface{}) (*sql.Rows, error) {
+func (stx *PGTx) Query(query string, args ...any) (*sql.Rows, error) {
 	return sctxQuery(stx.tx, stx.ctx, false, query, args...)
 }
 
-func (stx *PGTx) QueryPrint(query string, args ...interface{}) (*sql.Rows, error) {
+func (stx *PGTx) QueryPrint(query string, args ...any) (*sql.Rows, error) {
 	return sctxQuery(stx.tx, stx.ctx, true, query, args...)
 }
 
-func (stx *PGTx) Execute(query string, args ...interface{}) error {
+func (stx *PGTx) Execute(query string, args ...any) error {
 	return sctxExecute(stx.tx, stx.ctx, false, query, args...)
 }
 
-func (stx *PGTx) ExecutePrint(query string, args ...interface{}) error {
+func (stx *PGTx) ExecutePrint(query string, args ...any) error {
 	return sctxExecute(stx.tx, stx.ctx, true, query, args...)
 }
 
@@ -309,8 +309,8 @@ func fetchRow(rows *sql.Rows) (PGRow, error) {
 	}
 
 	resultMap := make(PGRow)
-	values := make([]interface{}, len(columns))
-	pointers := make([]interface{}, len(columns))
+	values := make([]any, len(columns))
+	pointers := make([]any, len(columns))
 	for i := range values {
 		pointers[i] = &values[i]
 	}
@@ -347,7 +347,7 @@ func fetchRow(rows *sql.Rows) (PGRow, error) {
 	return resultMap, nil
 }
 
-func sctxQuery(pgstx *sql.Tx, pgctx *context.Context, envDebug bool, query string, args ...interface{}) (*sql.Rows, error) {
+func sctxQuery(pgstx *sql.Tx, pgctx *context.Context, envDebug bool, query string, args ...any) (*sql.Rows, error) {
 	elapsed := time.Now()
 	if envDebug {
 		defer sqlQuery(elapsed, query, args...)
@@ -361,7 +361,7 @@ func sctxQuery(pgstx *sql.Tx, pgctx *context.Context, envDebug bool, query strin
 	return rows, nil
 }
 
-func sctxExecute(pgstx *sql.Tx, pgctx *context.Context, envDebug bool, query string, args ...interface{}) error {
+func sctxExecute(pgstx *sql.Tx, pgctx *context.Context, envDebug bool, query string, args ...any) error {
 	elapsed := time.Now()
 	if envDebug {
 		defer sqlQuery(elapsed, query, args...)
@@ -376,7 +376,7 @@ func sctxExecute(pgstx *sql.Tx, pgctx *context.Context, envDebug bool, query str
 	return nil
 }
 
-func sqlQuery(elapsed time.Time, query string, args ...interface{}) {
+func sqlQuery(elapsed time.Time, query string, args ...any) {
 	for i, arg := range args {
 		rgx := regexp.MustCompile(fmt.Sprintf(`\$%d`, i+1))
 		query = rgx.ReplaceAllString(query, "'"+arg.(string)+"'")

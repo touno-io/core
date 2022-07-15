@@ -138,7 +138,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatalf("stx: %s", err)
 		}
 
-		// recheck, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (interface{}, error) {
+		// recheck, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (any, error) {
 		// 	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
 		// 		return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
 		// 	}

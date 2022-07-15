@@ -193,7 +193,7 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		client.JSONMarshal = json.Marshal
 		client.JSONUnmarshal = json.Unmarshal
 
-		var res map[string]interface{}
+		var res map[string]any
 		_, err = client.R().
 			SetHeader("Content-Type", "application/json").
 			SetResult(&res).

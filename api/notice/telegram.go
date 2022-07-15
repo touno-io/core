@@ -24,10 +24,10 @@ type TelegramRequest struct {
 }
 
 type TelegramResponse struct {
-	OK          bool        `json:"ok"`
-	ErrorCode   int32       `json:"error_code,omitempty"`
-	Description string      `json:"description,omitempty"`
-	Result      interface{} `json:"result"`
+	OK          bool   `json:"ok"`
+	ErrorCode   int32  `json:"error_code,omitempty"`
+	Description string `json:"description,omitempty"`
+	Result      any    `json:"result"`
 }
 
 const telegramAPI string = "https://api.telegram.org"
