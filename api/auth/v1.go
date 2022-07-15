@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -24,22 +25,61 @@ type TokenClaims struct {
 	jwt.RegisteredClaims
 }
 
-func HandlerAuthMiddleware(pgx *db.PGClient, stx *db.PGTx, store *db.Storage) func(c *fiber.Ctx) error {
+func HandlerAuthMiddleware(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
-		usr, err := stx.QueryOne(`SELECT id FROM user_account 
-			WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
-		if err != nil && err != db.ErrNoRows {
-			return c.Status(401).JSON(api.HTTP{Error: err.Error()})
-		} else if !usr.ToBoolean("id") {
+		auth := c.Get(fiber.HeaderAuthorization)
+		if len(auth) <= 7 || strings.ToLower(auth[:6]) != "bearer" {
 			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
 		}
-		db.Debug("ID:", usr.ToInt64("id"))
 
-		token, err := store.Get("session_id")
+		// Decode the header contents
+
+		recheck, err := jwt.ParseWithClaims(auth[7:], &TokenClaims{}, func(t *jwt.Token) (any, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
+			}
+
+			if _, ok := t.Claims.(*TokenClaims); !ok {
+				return nil, fmt.Errorf("unexpected claims.")
+			}
+
+			return nil, nil
+		})
+
 		if err != nil {
-			return c.Status(500).JSON(api.HTTP{Error: fmt.Sprintf("Session Store: %s", err.Error())})
+			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
 		}
-		return c.JSON(AuthToken{Token: string(token)})
+
+		claim, ok := recheck.Claims.(*TokenClaims)
+		if !ok {
+			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+		}
+
+		db.Debugv(claim)
+
+		if err != nil {
+			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+		}
+
+		// usr, err := stx.QueryOne(`SELECT id FROM user_account
+		// 	WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
+		// if err != nil && err != db.ErrNoRows {
+		// 	return c.Status(401).JSON(api.HTTP{Error: err.Error()})
+		// } else if !usr.ToBoolean("id") {
+		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+		// }
+		// db.Debug("ID:", usr.ToInt64("id"))
+
+		// token, err := store.Get("session_id")
+		// if err != nil {
+		// 	return c.Status(500).JSON(api.HTTP{Error: fmt.Sprintf("Session Store: %s", err.Error())})
+		// }
+
+		// if err := stx.Commit(); err != nil {
+		// 	db.Trace.Fatalf("stx: %s", err)
+		// }
+
+		return c.Next()
 	}
 }
 
@@ -113,14 +153,21 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			return api.ThrowInternalServerError(c, err)
 		}
 
-		token := jwt.NewWithClaims(jwt.SigningMethodRS256, &TokenClaims{
+		rsa256Salt := &jwt.SigningMethodRSAPSS{
+			SigningMethodRSA: jwt.SigningMethodRS256,
+			Options: &rsa.PSSOptions{
+				SaltLength: rsa.PSSSaltLengthEqualsHash,
+			},
+		}
+
+		token := jwt.NewWithClaims(rsa256Salt, &TokenClaims{
 			usr["s_display_name"],
 			jwt.RegisteredClaims{
+				ID:        sess["n_session"],
+				Issuer:    c.Locals("username").(string),
 				NotBefore: jwt.NewNumericDate(time.Now()),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-				Issuer:    c.Locals("username").(string),
-				ID:        sess["n_session"],
 			},
 		})
 
@@ -130,6 +177,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 		}
 
 		tokenString, err := token.SignedString(privateKey)
+
 		if err != nil {
 			return api.ThrowInternalServerError(c, err)
 		}
@@ -142,10 +190,15 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 		// 	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
 		// 		return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
 		// 	}
-
-		// 	return privateKey, nil
+		// 	return nil, nil
 		// })
-		// db.Debugv(recheck)
+
+		// segments := strings.Split(tokenString, ".")
+		// db.Debugv(segments)
+		// err = rsa256Salt.Verify(strings.Join(segments[:2], "."), segments[2], publicKey)
+		// if err != nil {
+		// 	db.Debugf("Error while verifying key: %v", err)
+		// }
 
 		// if err != nil {
 		// 	db.Debug(fmt.Errorf("validate: %w", err))
@@ -170,6 +223,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 
 func HandlerV1UserInfo(pgx *db.PGClient) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
+
 		return c.SendString("{}")
 	}
 }
