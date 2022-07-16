@@ -14,8 +14,8 @@ require (
 )
 
 require (
+	github.com/dvsekhvalnov/jose2go v1.5.0 // indirect
 	github.com/gofiber/storage/postgres v0.0.0-20220523092334-6d96fb56afb5 // indirect
-	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e // indirect

@@ -9,6 +9,7 @@ import (
 // Storage interface that is implemented by storage providers
 type Storage struct {
 	stx        *PGTx
+	pgx        *PGClient
 	gcInterval time.Duration
 	done       chan struct{}
 
@@ -43,6 +44,7 @@ func CacheNew(pgx *PGClient, tableName string) *Storage {
 
 	return &Storage{
 		stx:        stx,
+		pgx:        pgx,
 		gcInterval: 10 * time.Second,
 		done:       make(chan struct{}),
 		sqlSelect:  fmt.Sprintf(`SELECT a_value, t_expire FROM "cache"."%s" WHERE s_key=$1;`, tableName),
@@ -88,7 +90,8 @@ func (s *Storage) Set(key string, val []byte, exp time.Duration) error {
 	if exp != 0 {
 		expSeconds = time.Now().Add(exp).Unix()
 	}
-	return s.stx.Execute(s.sqlInsert, key, val, expSeconds)
+	_, err := s.pgx.DB.Exec(s.sqlInsert, key, val, expSeconds)
+	return err
 }
 
 // Delete entry by key
@@ -109,35 +112,3 @@ func (s *Storage) Reset() error {
 func (s *Storage) Close() error {
 	return s.stx.Commit()
 }
-
-// gcTicker starts the gc ticker
-// func (s *Storage) gcTicker() {
-// 	ticker := time.NewTicker(s.gcInterval)
-// 	defer ticker.Stop()
-// 	for {
-// 		select {
-// 		case <-s.done:
-// 			return
-// 		case t := <-ticker.C:
-// 			s.gc(t)
-// 		}
-// 	}
-// }
-
-// gc deletes all expired entries
-// func (s *Storage) gc(t time.Time) {
-// 	_, _ = s.stx.Exec(s.sqlGC, t.Unix())
-// }
-
-// func (s *Storage) checkSchema(tableName string) {
-// 	var data []byte
-
-// 	row := s.stx.QueryRow(fmt.Sprintf(checkSchemaQuery, tableName))
-// 	if err := row.Scan(&data); err != nil {
-// 		panic(err)
-// 	}
-
-// 	if strings.ToLower(string(data)) != "bytea" {
-// 		fmt.Printf(checkSchemaMsg, string(data))
-// 	}
-// }

@@ -6,12 +6,12 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
+	jose "github.com/dvsekhvalnov/jose2go"
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/touno-io/core/api"
 	"github.com/touno-io/core/db"
 )
@@ -21,8 +21,12 @@ type AuthToken struct {
 }
 
 type TokenClaims struct {
-	Name string `json:"dat"`
-	jwt.RegisteredClaims
+	Name      string `json:"name"`
+	ID        string `json:"jti"`
+	Issuer    string `json:"iss"`
+	NotBefore int64  `json:"nbf"`
+	IssuedAt  int64  `json:"iat"`
+	ExpiresAt int64  `json:"exp"`
 }
 
 func HandlerAuthMiddleware(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx) error {
@@ -31,35 +35,70 @@ func HandlerAuthMiddleware(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ct
 		if len(auth) <= 7 || strings.ToLower(auth[:6]) != "bearer" {
 			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
 		}
+		stx, err := pgx.Begin(db.LevelDefault)
+		if db.IsRollback(err, stx) {
+			db.Trace.Fatal(err)
+		}
 
 		// Decode the header contents
-
-		recheck, err := jwt.ParseWithClaims(auth[7:], &TokenClaims{}, func(t *jwt.Token) (any, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-				return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
+		payload, headers, err := jose.Decode(auth[7:], func(headers map[string]interface{}, payload string) interface{} {
+			//log something
+			var claims TokenClaims
+			err := jsoniter.ConfigCompatibleWithStandardLibrary.UnmarshalFromString(payload, &claims)
+			if err != nil {
+				return err
 			}
 
-			if _, ok := t.Claims.(*TokenClaims); !ok {
-				return nil, fmt.Errorf("unexpected claims.")
+			publicBytes, err := store.Get(claims.ID)
+			if err != nil {
+				return err
 			}
 
-			return nil, nil
+			publicKey, err := x509.ParsePKIXPublicKey(publicBytes)
+			if err != nil {
+				return err
+			}
+
+			return publicKey
 		})
 
-		if err != nil {
-			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-		}
+		db.Debugf("err = %v\n", err)
+		//go use token
+		db.Debugf("payload = %v\n", string(payload))
 
-		claim, ok := recheck.Claims.(*TokenClaims)
-		if !ok {
-			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-		}
-
-		db.Debugv(claim)
+		//and/or use headers
+		db.Debugf("headers = %v\n", headers)
 
 		if err != nil {
 			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
 		}
+
+		// recheck, err := jwt.ParseWithClaims(auth[7:], &TokenClaims{}, func(t *jwt.Token) (any, error) {
+		// 	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+		// 		return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
+		// 	}
+
+		// 	if _, ok := t.Claims.(*TokenClaims); !ok {
+		// 		return nil, fmt.Errorf("unexpected claims.")
+		// 	}
+
+		// 	return nil, nil
+		// })
+
+		// if err != nil {
+		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+		// }
+
+		// claim, ok := recheck.Claims.(*TokenClaims)
+		// if !ok {
+		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+		// }
+
+		// db.Debugv(claim)
+
+		// if err != nil {
+		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
+		// }
 
 		// usr, err := stx.QueryOne(`SELECT id FROM user_account
 		// 	WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
@@ -96,7 +135,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatal(err)
 		}
 
-		usr, err := stx.QueryOne(`SELECT id, n_level, s_display_name, a_private_key FROM user_account 
+		usr, err := stx.QueryOne(`SELECT id, n_level, s_display_name, a_private_key, a_public_key FROM user_account 
 			WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
 
 		if db.IsRollbackThrow(err, stx) {
@@ -112,71 +151,51 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			}
 			return api.ErrorHandlerThrow(c, fiber.StatusUnauthorized, errors.New("Baned"))
 		}
-		// _, err = stx.QueryOne(`
-		// 	SELECT
-		// 		t.e_role, t.s_token, r.s_name, array_to_json(array_agg(p.s_name)) permission
-		// 	FROM user_account a
-		// 	INNER JOIN user_token t ON t.user_id = a.id
-		// 	INNER JOIN user_role r on r.id = t.user_role_id
-		// 	INNER JOIN user_role_permission rp on rp.user_role_id = r.id
-		// 	INNER JOIN user_permission p on p.id = rp.user_permission_id
-		// 	WHERE a.id = $1
-		// 	GROUP BY t.e_role, t.s_token, r.s_name
-		// `, usr.ToInt64("id"))
+		var sessionId string
+		check, err := stx.QueryOne(`
+			SELECT n_session FROM user_session
+			WHERE user_id = $1 AND s_ipaddr = $2 AND t_created >= NOW() - INTERVAL '1 DAY'
+		`, usr.ToInt64("id"), c.IP())
 
-		// if db.IsRollbackThrow(err, stx) && err != db.ErrNoRows {
-		// 	return api.ThrowInternalServerError(c, err)
-		// }
-
-		// if err == db.ErrNoRows {
-		// 	// publicBlock, privateBlock, err := generateRSAKey()
-		// 	// if db.IsRollbackThrow(err, stx) {
-		// 	// 	return api.ThrowInternalServerError(c, err)
-		// 	// }
-
-		// 	// err = stx.Execute(`
-		// 	// 	UPDATE user_account SET a_public_key=$2, a_private_key=$3 WHERE id = $1;
-		// 	// `, usr.ToInt64("id"), publicBlock.Bytes, privateBlock.Bytes)
-		// 	// if db.IsRollbackThrow(err, stx) {
-		// 	// 	return api.ThrowInternalServerError(c, err)
-		// 	// }
-
-		// }
-
-		sess, err := stx.QueryOne(`
+		if err != db.ErrNoRows && err != nil {
+			return api.ThrowInternalServerError(c, err)
+		} else if err != db.ErrNoRows {
+			sessionId = check["n_session"]
+		} else {
+			sess, err := stx.QueryOne(`
 			INSERT INTO user_session (user_id, s_ipaddr) VALUES ($1, $2)
 			ON CONFLICT ON CONSTRAINT uq_user_ip
-			DO UPDATE SET n_session = uuid_generate_v4()
+			DO UPDATE SET n_session = uuid_generate_v4(), t_created = NOW()
 			RETURNING n_session;
 		`, usr.ToInt64("id"), c.IP())
-		if db.IsRollbackThrow(err, stx) {
-			return api.ThrowInternalServerError(c, err)
-		}
 
-		rsa256Salt := &jwt.SigningMethodRSAPSS{
-			SigningMethodRSA: jwt.SigningMethodRS256,
-			Options: &rsa.PSSOptions{
-				SaltLength: rsa.PSSSaltLengthEqualsHash,
-			},
+			if db.IsRollbackThrow(err, stx) {
+				return api.ThrowInternalServerError(c, err)
+			}
+			sessionId = sess["n_session"]
+			err = store.Set(sessionId, usr.ToByte("a_public_key"), time.Hour*24)
+			if db.IsRollbackThrow(err, stx) {
+				return api.ThrowInternalServerError(c, err)
+			}
 		}
-
-		token := jwt.NewWithClaims(rsa256Salt, &TokenClaims{
-			usr["s_display_name"],
-			jwt.RegisteredClaims{
-				ID:        sess["n_session"],
-				Issuer:    c.Locals("username").(string),
-				NotBefore: jwt.NewNumericDate(time.Now()),
-				IssuedAt:  jwt.NewNumericDate(time.Now()),
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			},
-		})
 
 		privateKey, _, err := ParsePKCS1PrivateKey(usr.ToByte("a_private_key"))
 		if err != nil {
 			return api.ThrowInternalServerError(c, err)
 		}
 
-		tokenString, err := token.SignedString(privateKey)
+		payload, err := jsoniter.ConfigCompatibleWithStandardLibrary.Marshal(TokenClaims{
+			Name:      usr["s_display_name"],
+			ID:        sessionId,
+			Issuer:    c.Locals("username").(string),
+			NotBefore: getTimeStamp(time.Now()),
+			IssuedAt:  getTimeStamp(time.Now()),
+			ExpiresAt: getTimeStamp(time.Now().Add(24 * time.Hour)),
+		})
+
+		tokenString, err := jose.SignBytes(payload, jose.RS256, privateKey)
+
+		// tokenString, err := token.SignedString(privateKey)
 
 		if err != nil {
 			return api.ThrowInternalServerError(c, err)
@@ -186,12 +205,14 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatalf("stx: %s", err)
 		}
 
-		// recheck, err := jwt.ParseWithClaims(tokenString, &TokenClaims{}, func(t *jwt.Token) (any, error) {
-		// 	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-		// 		return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
-		// 	}
-		// 	return nil, nil
-		// })
+		// payload, headers, err := jose.DecodeBytes(tokenString, &privateKey.PublicKey)
+		// if err == nil {
+		// 	//go use token
+		// 	db.Debugf("payload = %v\n", payload)
+
+		// 	//and/or use headers
+		// 	db.Debugf("headers = %v\n", headers)
+		// }
 
 		// segments := strings.Split(tokenString, ".")
 		// db.Debugv(segments)
@@ -279,4 +300,8 @@ func PEMEncodeToMemory(privateKey *rsa.PrivateKey) ([]byte, []byte, error) {
 
 	pemPublic = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pemPublic})
 	return pemPrivate, pemPublic, nil
+}
+
+func getTimeStamp(t time.Time) int64 {
+	return t.UnixNano() / int64(time.Millisecond)
 }
