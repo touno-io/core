@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -21,7 +22,8 @@ type AuthToken struct {
 }
 
 type TokenClaims struct {
-	Name      string `json:"name"`
+	Name      string `json:"nae"`
+	UUID      string `json:"usr"`
 	ID        string `json:"jti"`
 	Issuer    string `json:"iss"`
 	NotBefore int64  `json:"nbf"`
@@ -35,21 +37,25 @@ func HandlerAuthMiddleware(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ct
 		if len(auth) <= 7 || strings.ToLower(auth[:6]) != "bearer" {
 			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
 		}
-		stx, err := pgx.Begin(db.LevelDefault)
-		if db.IsRollback(err, stx) {
-			db.Trace.Fatal(err)
-		}
 
-		// Decode the header contents
-		payload, headers, err := jose.Decode(auth[7:], func(headers map[string]interface{}, payload string) interface{} {
-			//log something
+		_, _, err := jose.Decode(auth[7:], func(headers map[string]interface{}, payload string) interface{} {
 			var claims TokenClaims
 			err := jsoniter.ConfigCompatibleWithStandardLibrary.UnmarshalFromString(payload, &claims)
 			if err != nil {
 				return err
 			}
 
+			c.Locals("claims", claims)
+
+			if time.Now().Sub(time.Unix(claims.NotBefore, 0)) < 0 && time.Now().Sub(time.Unix(claims.ExpiresAt, 0)) > 0 {
+				return fmt.Errorf("Session Expired")
+			}
+
 			publicBytes, err := store.Get(claims.ID)
+			if publicBytes == nil && err == nil {
+				return fmt.Errorf("Session Deny")
+			}
+
 			if err != nil {
 				return err
 			}
@@ -59,64 +65,19 @@ func HandlerAuthMiddleware(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ct
 				return err
 			}
 
+			// pemPublic, err := x509.MarshalPKIXPublicKey(publicKey)
+			// if err != nil {
+			// 	return err
+			// }
+			// pemPublic = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pemPublic})
+			// db.Debug(string(pemPublic))
+
 			return publicKey
 		})
-
-		db.Debugf("err = %v\n", err)
-		//go use token
-		db.Debugf("payload = %v\n", string(payload))
-
-		//and/or use headers
-		db.Debugf("headers = %v\n", headers)
 
 		if err != nil {
 			return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
 		}
-
-		// recheck, err := jwt.ParseWithClaims(auth[7:], &TokenClaims{}, func(t *jwt.Token) (any, error) {
-		// 	if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-		// 		return nil, fmt.Errorf("unexpected method: %s", t.Header["alg"])
-		// 	}
-
-		// 	if _, ok := t.Claims.(*TokenClaims); !ok {
-		// 		return nil, fmt.Errorf("unexpected claims.")
-		// 	}
-
-		// 	return nil, nil
-		// })
-
-		// if err != nil {
-		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-		// }
-
-		// claim, ok := recheck.Claims.(*TokenClaims)
-		// if !ok {
-		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-		// }
-
-		// db.Debugv(claim)
-
-		// if err != nil {
-		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-		// }
-
-		// usr, err := stx.QueryOne(`SELECT id FROM user_account
-		// 	WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
-		// if err != nil && err != db.ErrNoRows {
-		// 	return c.Status(401).JSON(api.HTTP{Error: err.Error()})
-		// } else if !usr.ToBoolean("id") {
-		// 	return c.Status(401).JSON(api.HTTP{Error: "Unauthorized"})
-		// }
-		// db.Debug("ID:", usr.ToInt64("id"))
-
-		// token, err := store.Get("session_id")
-		// if err != nil {
-		// 	return c.Status(500).JSON(api.HTTP{Error: fmt.Sprintf("Session Store: %s", err.Error())})
-		// }
-
-		// if err := stx.Commit(); err != nil {
-		// 	db.Trace.Fatalf("stx: %s", err)
-		// }
 
 		return c.Next()
 	}
@@ -135,7 +96,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatal(err)
 		}
 
-		usr, err := stx.QueryOne(`SELECT id, n_level, s_display_name, a_private_key, a_public_key FROM user_account 
+		usr, err := stx.QueryOne(`SELECT id, n_level, n_object, s_display_name, a_private_key, a_public_key FROM user_account 
 			WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
 
 		if db.IsRollbackThrow(err, stx) {
@@ -186,6 +147,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 
 		payload, err := jsoniter.ConfigCompatibleWithStandardLibrary.Marshal(TokenClaims{
 			Name:      usr["s_display_name"],
+			UUID:      usr["n_object"],
 			ID:        sessionId,
 			Issuer:    c.Locals("username").(string),
 			NotBefore: getTimeStamp(time.Now()),
@@ -195,8 +157,6 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 
 		tokenString, err := jose.SignBytes(payload, jose.RS256, privateKey)
 
-		// tokenString, err := token.SignedString(privateKey)
-
 		if err != nil {
 			return api.ThrowInternalServerError(c, err)
 		}
@@ -205,52 +165,70 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatalf("stx: %s", err)
 		}
 
-		// payload, headers, err := jose.DecodeBytes(tokenString, &privateKey.PublicKey)
-		// if err == nil {
-		// 	//go use token
-		// 	db.Debugf("payload = %v\n", payload)
-
-		// 	//and/or use headers
-		// 	db.Debugf("headers = %v\n", headers)
-		// }
-
-		// segments := strings.Split(tokenString, ".")
-		// db.Debugv(segments)
-		// err = rsa256Salt.Verify(strings.Join(segments[:2], "."), segments[2], publicKey)
-		// if err != nil {
-		// 	db.Debugf("Error while verifying key: %v", err)
-		// }
-
-		// if err != nil {
-		// 	db.Debug(fmt.Errorf("validate: %w", err))
-		// }
-
-		// claims, ok := recheck.Claims.(*TokenClaims)
-		// if !ok {
-		// 	db.Debug(fmt.Errorf("validate: invalid"))
-		// }
-		// db.Debugv(claims)
-
-		// db.Debug(string(pemPublic))
-		// db.Debug(string(pemPrivate))
-		// role = &Role{
-		// 	Type: "USER",
-		// 	Role: []map[string][]string{},
-		// }
-
 		return c.JSON(AuthToken{Token: tokenString})
 	}
 }
 
+type UserPermission struct {
+	Name string `json:"name"`
+}
+type UserAccount struct {
+	Name       string           `json:"name"`
+	Email      string           `json:"mail"`
+	Level      string           `json:"level"`
+	Permission []UserPermission `json:"permission"`
+}
+
 func HandlerV1UserInfo(pgx *db.PGClient) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
+		claims := c.Locals("claims").(TokenClaims)
 
-		return c.SendString("{}")
+		stx, err := pgx.Begin(db.LevelDefault)
+		if db.IsRollback(err, stx) {
+			db.Trace.Fatal(err)
+		}
+		account, err := stx.QueryOne(`
+			SELECT s_display_name, s_email, n_level
+			FROM user_account
+			WHERE n_object = $1;
+		`, claims.UUID)
+
+		if err := stx.Commit(); err != nil {
+			db.Trace.Fatalf("stx: %s", err)
+		}
+
+		return c.JSON(&UserAccount{
+			Name:       account["s_display_name"],
+			Email:      account["s_email"],
+			Level:      account["n_level"],
+			Permission: []UserPermission{},
+		})
 	}
 }
 
-func HandlerV1SignOut(pgx *db.PGClient) func(c *fiber.Ctx) error {
+func HandlerV1SignOut(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
+		claims := c.Locals("claims").(TokenClaims)
+
+		stx, err := pgx.Begin(db.LevelDefault)
+		if db.IsRollback(err, stx) {
+			db.Trace.Fatal(err)
+		}
+
+		err = stx.Execute(`DELETE FROM user_session WHERE n_session = $1;`, claims.ID)
+		if db.IsRollbackThrow(err, stx) {
+			return api.ThrowInternalServerError(c, err)
+		}
+
+		err = store.Delete(claims.ID)
+		if db.IsRollbackThrow(err, stx) {
+			return api.ThrowInternalServerError(c, err)
+		}
+
+		if err := stx.Commit(); err != nil {
+			db.Trace.Fatalf("stx: %s", err)
+		}
+
 		return c.SendString("{}")
 	}
 }

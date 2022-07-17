@@ -97,7 +97,7 @@ func main() {
 	}), auth.HandlerV1BasicSignIn(pgx, storeSession))
 
 	appAuth.Get("/account", auth.HandlerAuthMiddleware(pgx, storeSession), auth.HandlerV1UserInfo(pgx))
-	appAuth.Delete("/", auth.HandlerAuthMiddleware(pgx, storeSession), auth.HandlerV1SignOut(pgx))
+	appAuth.Delete("/", auth.HandlerAuthMiddleware(pgx, storeSession), auth.HandlerV1SignOut(pgx, storeSession))
 
 	appApi := app.Group("/api", func(c *fiber.Ctx) error {
 		return c.Next()
