@@ -96,6 +96,8 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatal(err)
 		}
 
+		db.Info("Header:", c.Request().Header)
+
 		usr, err := stx.QueryOne(`SELECT id, n_level, n_object, s_display_name, a_private_key, a_public_key FROM user_account 
 			WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
 
