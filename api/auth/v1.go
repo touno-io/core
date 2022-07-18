@@ -96,9 +96,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			db.Trace.Fatal(err)
 		}
 
-		c.Request().Header.VisitAll(func(key, value []byte) {
-			db.Infof(" - %s: %s", key, string(value))
-		})
+		ipAddr := api.GetConnectingIP(c)
 
 		usr, err := stx.QueryOne(`SELECT id, n_level, n_object, s_display_name, a_private_key, a_public_key FROM user_account 
 			WHERE s_email = $1 AND (s_pwd is NOT NULL AND s_pwd = crypt($2, s_pwd));`, c.Locals("username"), c.Locals("password"))
@@ -120,7 +118,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 		check, err := stx.QueryOne(`
 			SELECT n_session FROM user_session
 			WHERE user_id = $1 AND s_ipaddr = $2 AND t_created >= NOW() - INTERVAL '1 DAY'
-		`, usr.ToInt64("id"), c.IP())
+		`, usr.ToInt64("id"), ipAddr)
 
 		if err != db.ErrNoRows && err != nil {
 			return api.ThrowInternalServerError(c, err)
@@ -132,7 +130,7 @@ func HandlerV1BasicSignIn(pgx *db.PGClient, store *db.Storage) func(c *fiber.Ctx
 			ON CONFLICT ON CONSTRAINT uq_user_ip
 			DO UPDATE SET n_session = uuid_generate_v4(), t_created = NOW()
 			RETURNING n_session;
-		`, usr.ToInt64("id"), c.IP())
+		`, usr.ToInt64("id"), ipAddr)
 
 			if db.IsRollbackThrow(err, stx) {
 				return api.ThrowInternalServerError(c, err)

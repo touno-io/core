@@ -5,13 +5,11 @@ import (
 	"math/rand"
 	"net/url"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/gofiber/fiber/v2"
 	jsoniter "github.com/json-iterator/go"
-	ua "github.com/mileusna/useragent"
 	"github.com/touno-io/core/api"
 	"github.com/touno-io/core/db"
 )
@@ -155,7 +153,8 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
 		regHash, _ := regexp.Compile("^[a-zA-Z0-9]+")
 
-		ipAddr := c.IP()
+		ipAddr := api.GetConnectingIP(c)
+		userAgent := api.GetUserAgent(c)
 		if len(c.Params("hash")) != 4 {
 			return c.Render("short-url", fiberError("Invalid URL redirect"))
 		}
@@ -169,22 +168,6 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		short, err := stx.QueryOne("SELECT title, meta, url FROM shorturl WHERE hash = $1", hashKey)
 		if db.IsRollback(err, stx) {
 			return c.Render("short-url", fiberError("Invalid URL redirect"))
-		}
-
-		raw := string(c.Request().Header.Header())
-		regUserAgent, _ := regexp.Compile("(?i)user-agent:(.*?)\n")
-		hAgent := regUserAgent.FindStringSubmatch(raw)
-		agent := ua.Parse(strings.TrimSpace(hAgent[1]))
-
-		regCfIP, _ := regexp.Compile("(?i)cf-connecting-ip:(.*?)\n")
-		connectingIp := regCfIP.FindStringSubmatch(raw)
-
-		if len(connectingIp) > 0 {
-			ipAddr = strings.TrimSpace(connectingIp[1])
-		}
-
-		if ipAddr == "127.0.0.1" || ipAddr == "::1" {
-			ipAddr = "touno.io"
 		}
 
 		json := jsoniter.ConfigCompatibleWithStandardLibrary
@@ -206,12 +189,12 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		}
 
 		if res["status"] == "fail" {
-			return c.SendString(fmt.Sprintf("%s\n\nIP: %s can't is %+v", raw, ipAddr, res))
+			return c.SendString(fmt.Sprintf("IP: %s can't is %+v", ipAddr, res))
 		}
 
 		sAgent, err := json.Marshal(Agent{
-			Name:    agent.Name,
-			Version: agent.Version,
+			Name:    userAgent.Name,
+			Version: userAgent.Version,
 			IP:      ipAddr,
 			Country: res["country"].(string),
 			ISP:     res["isp"].(string),
@@ -223,12 +206,12 @@ func HandlerRedirectURL(pgx *db.PGClient) func(c *fiber.Ctx) error {
 		}
 
 		sDevice, err := json.Marshal(Device{
-			OS:        agent.OS,
-			OSVersion: agent.Version,
-			Mobile:    agent.Mobile,
-			Tablet:    agent.Tablet,
-			Desktop:   agent.Desktop,
-			Bot:       agent.Bot,
+			OS:        userAgent.OS,
+			OSVersion: userAgent.Version,
+			Mobile:    userAgent.Mobile,
+			Tablet:    userAgent.Tablet,
+			Desktop:   userAgent.Desktop,
+			Bot:       userAgent.Bot,
 		})
 		if db.IsRollback(err, stx) {
 			return c.Render("short-url", fiberError(err.Error()))

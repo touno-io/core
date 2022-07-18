@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gofiber/fiber/v2"
+	ua "github.com/mileusna/useragent"
 	"github.com/touno-io/core/db"
 )
 
@@ -46,6 +48,29 @@ type HTTP struct {
 // 	}
 // 	return c.Status(e.Code).JSON((HTTP{Code: e.Code, Error: e.Error}))
 // }
+
+func GetConnectingIP(c *fiber.Ctx) string {
+	var ipAddr string = c.IP()
+	raw := string(c.Request().Header.Header())
+	regCfIP, _ := regexp.Compile("(?i)cf-connecting-ip:(.*?)\n")
+	connectingIp := regCfIP.FindStringSubmatch(raw)
+
+	if len(connectingIp) > 0 {
+		ipAddr = strings.TrimSpace(connectingIp[1])
+	}
+
+	if ipAddr == "127.0.0.1" || ipAddr == "::1" {
+		ipAddr = "www.touno.io"
+	}
+	return ipAddr
+}
+
+func GetUserAgent(c *fiber.Ctx) ua.UserAgent {
+	raw := string(c.Request().Header.Header())
+	regUserAgent, _ := regexp.Compile("(?i)user-agent:(.*?)\n")
+	hAgent := regUserAgent.FindStringSubmatch(raw)
+	return ua.Parse(strings.TrimSpace(hAgent[1]))
+}
 
 func ThrowInternalServerError(c *fiber.Ctx, err error) error {
 	return ErrorHandlerThrow(c, fiber.StatusInternalServerError, err)
