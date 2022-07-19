@@ -65,7 +65,7 @@ jobs:
     if: success() && github.event_name != 'pull_request'
     steps:
       - name: Trigger deploy 🚀
-        if: success() && github.event_name != 'pull_request' && !contains(github.ref, "main")
+        if: success() && github.event_name != 'pull_request' && !contains(github.ref, 'main')
         uses: ladislas14/kubernetes-action@1.0.1
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
