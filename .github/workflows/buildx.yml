@@ -15,6 +15,7 @@ jobs:
       PLATFORMS: linux/amd64,linux/386,linux/arm64
     outputs:
       container_name: ${{ steps.prepare.outputs.docker_image }}:${{ steps.prepare.outputs.version }}
+      version: ${{ steps.prepare.outputs.version }}
     steps:
       - uses: actions/checkout@v2
 
@@ -24,10 +25,9 @@ jobs:
           VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
 
           # Strip "v" prefix from tag name
-          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=$(echo $VERSION | sed -e 's/^v//')
+          [[ "${{ github.ref }}" == "refs/tags/"* ]] && VERSION=v$(echo $VERSION | sed -e 's/^v//')
 
           # Use Docker `latest` tag convention
-          
           [ "$VERSION" == "main" ] && VERSION=latest
 
           echo ::set-output name=docker_image::${{github.actor}}/${IMAGE_NAME}
@@ -65,7 +65,7 @@ jobs:
     if: success() && github.event_name != 'pull_request'
     steps:
       - name: Trigger deploy 🚀
-        if: success() && github.event_name != 'pull_request'
+        if: success() && github.event_name != 'pull_request' && !contains(github.ref, "main")
         uses: ladislas14/kubernetes-action@1.0.1
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
