@@ -62,10 +62,9 @@ jobs:
   k8s:
     runs-on: ubuntu-18.04
     needs: build
-    if: success() && github.event_name != 'pull_request'
+    if: success() && github.event_name != 'pull_request' && !contains(github.ref, 'main')
     steps:
       - name: Trigger deploy 🚀
-        if: success() && github.event_name != 'pull_request' && !contains(github.ref, 'main')
         uses: ladislas14/kubernetes-action@1.0.1
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
